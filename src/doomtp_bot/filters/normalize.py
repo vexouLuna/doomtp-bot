@@ -18,6 +18,8 @@ CONFUSABLES = {
     "@": "a", "$": "s", "!": "i", "|": "i", "£": "l", "€": "e", "+": "t", "¡": "i",
     "ø": "o", "œ": "oe", "æ": "ae", "ß": "ss", "ð": "d", "þ": "th", "ł": "l", "đ": "d", "ı": "i",
 }  # fmt: skip
+# Symbols in CONFUSABLES stand for a letter only inside a word: "n!ce" is "nice", but "bad!" stays "bad!".
+SYMBOLS = frozenset(k for k in CONFUSABLES if not k.isalnum())
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +49,10 @@ def normalize(text: str) -> Normalized:
     for index, raw in enumerate(text):
         if raw in INVISIBLE:
             continue
+        if raw in SYMBOLS and not _letter_follows(text, index + 1):
+            chars.append(raw)
+            origin.append(index)
+            continue
         for decomposed in unicodedata.normalize("NFKD", raw):
             if unicodedata.combining(decomposed):  # accents, after NFKD
                 continue
@@ -57,6 +63,14 @@ def normalize(text: str) -> Normalized:
                 chars.append(char)
                 origin.append(index)
     return Normalized("".join(chars), tuple(origin))
+
+
+def _letter_follows(text: str, start: int) -> bool:
+    """Whether a letter or digit comes next, past any more symbols ("n!!ce", not "bad!!")."""
+    for char in text[start:]:
+        if char not in SYMBOLS and char not in INVISIBLE:
+            return char.isalnum()
+    return False
 
 
 def normalize_pattern(pattern: str) -> str:

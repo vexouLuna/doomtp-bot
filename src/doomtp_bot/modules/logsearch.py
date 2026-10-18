@@ -33,6 +33,7 @@ def ago(ms: int, now_ms: int) -> str:
 @command(
     CommandSpec(
         name="logsearch",
+        data_schema={"": "{count: int, messages: [{login: str, text: str, sent_at: int}]}"},
         module=MODULE,
         summary="Find something said in this channel's chat",
         description=(

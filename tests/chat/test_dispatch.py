@@ -150,7 +150,13 @@ async def h(dbs: Databases, make_backfill_jobs: MakeBackfillJobs) -> AsyncIterat
     channels = ChannelManager(policy, twitch, writer, default_prefix="!")  # emoji default: see below
     runtime.services["channels"] = channels
     moderation = ModerationIndex()
-    outbox = Outbox(twitch, writer, on_banned=channels.leave_banned)
+    outbox = Outbox(
+        twitch,
+        writer,
+        on_banned=channels.leave_banned,
+        enabled_for=lambda c: (s := policy.channel_settings(c)) is None or s.bot_enabled,
+    )
+
     streams = StreamStatus()
     dispatcher = Dispatcher(
         runtime=runtime, policy=policy, writer=writer, outbox=outbox, moderation=moderation,
@@ -191,7 +197,23 @@ async def test_ignored_users_bots_and_self_are_logged_but_never_run(h: Harness) 
     assert len(await h.rows("SELECT 1 FROM messages")) == 3
 
 
+async def test_a_channel_with_the_bot_off_is_logged_but_nothing_runs_or_speaks(h: Harness) -> None:
+    await h.policy.mutate(lambda r: r.set_channel_field(CHANNEL_ID, "bot_enabled", False, Actor("1")))
+    await h.say("alice", "!ping")
+    await h.say("alice", "just chatting")
+    await h.settle()
+    assert h.twitch.sent == []
+    assert len(await h.rows("SELECT 1 FROM messages")) == 2  # logging keeps running
+    assert await h.rows("SELECT 1 FROM command_runs") == []
+    # Whatever reaches the outbox anyway (a run already under way, `mecho`) is refused and logged as such.
+    await h.dispatcher.outbox.send(CHANNEL_ID, "hello")
+    await h.settle()
+    assert h.twitch.sent == []
+    assert await h.rows("SELECT dropped_reason FROM outbound_msgs") == [("bot_off",)]
+
+
 async def test_unjoined_channels_are_ignored_entirely(h: Harness) -> None:
+
     await h.say("alice", "!ping", channel="777")
     await h.settle()
     assert h.twitch.sent == [] and await h.rows("SELECT 1 FROM messages") == []

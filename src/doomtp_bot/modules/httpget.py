@@ -66,6 +66,7 @@ def _may_fetch(ctx: CommandContext) -> bool:
 @command(
     CommandSpec(
         name="http",
+        data_schema={"": "any: the response (parsed JSON or text), or the part a path picks"},
         module=MODULE,
         summary="Read one value from a web API; only commands a bot admin wrote can use it",
         description=(

@@ -90,7 +90,10 @@ async def run(settings: Settings) -> None:
     store = PostgresVariableStore(dbs.bot)
     access = VariableAccessPolicy(policy, dbs.bot)
     await access.reload()
-    content_filter = FilterService(dbs.bot)
+    content_filter = FilterService(
+        dbs.bot, slur_level=lambda channel_id: (s := policy.channel_settings(channel_id)) and s.slur_filter or "base"
+    )
+
     await content_filter.reload()
     http_hosts = HostStore(dbs.bot)  # the hosts `http get` may fetch (ADR-0020)
     await http_hosts.reload()
@@ -230,6 +233,7 @@ async def run(settings: Settings) -> None:
         hold_ms_for=hold_ms_for,
         content_filter=content_filter.apply,
         links_allowed_for=links_allowed_for,
+        enabled_for=lambda channel_id: (s := policy.channel_settings(channel_id)) is None or s.bot_enabled,
         on_banned=channels.leave_banned,  # a 403 on a send means banned there (architecture §10)
     )
     runtime.services["outbox"] = outbox  # `mecho` sends its lines itself, one message each

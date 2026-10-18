@@ -188,6 +188,35 @@ async def test_backfilled_rows_are_read_from_their_irc_lines(
     ]  # fmt: skip
 
 
+async def test_a_chat_notice_carries_its_message_as_a_chat_line(
+    client: httpx.AsyncClient, app_and_keys: tuple[Any, ApiKeyService], write_key: str
+) -> None:
+    """A resub as prod saw it (#moonmoon): the user's own message, color and badges come with it, and
+    the name comes from the event when the user was never seen chatting."""
+    conn: Connection = app_and_keys[0].state.chatlog
+    resub = {
+        "notice_type": "resub",
+        "chatter_user_id": "900", "chatter_user_login": "synthetiquee", "chatter_user_name": "synthetiquee",
+        "chatter_is_anonymous": False, "color": "#FF69B4",
+        "badges": [{"set_id": "subscriber", "id": "3", "info": "3"}],
+        "system_message": "synthetiquee subscribed with Prime. They've subscribed for 3 months!",
+        "message": {"text": ":)", "fragments": [
+            {"type": "emote", "text": ":)", "emote": {"id": "1", "emote_set_id": "0"}}]},
+        "resub": {"cumulative_months": 3, "sub_tier": "1000", "is_prime": True},
+    }  # fmt: skip
+    await conn.execute(
+        "INSERT INTO chat_notifications (id, channel_id, user_id, type, raw, raw_format, sent_at)"
+        " VALUES ('n-resub', %s, '900', 'resub', %s, 'eventsub', %s)",
+        (CHANNEL_ID, json.dumps(resub), T),
+    )
+
+    (notice,) = (await client.get(LOG, headers=auth(write_key))).json()["entries"]
+    assert notice["user"] == {"id": "900", "login": "synthetiquee", "display_name": "synthetiquee"}
+    assert notice["color"] == "#FF69B4" and notice["badges"] == resub["badges"]
+    assert notice["fragments"] == [{"type": "emote", "text": ":)", "emote_id": "1", "emote": {"emote_set_id": "0"}}]
+    assert notice["payload"]["system_message"].endswith("3 months!") and notice["payload"]["text"] == ":)"
+
+
 @pytest.mark.parametrize("order", ["asc", "desc"])
 @pytest.mark.parametrize("limit", [1, 2, 4])
 async def test_pages_follow_on_without_gaps_or_repeats(
