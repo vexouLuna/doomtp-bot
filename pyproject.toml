@@ -1,6 +1,6 @@
 [project]
 name = "doomtp-bot"
-version = "0.15.1"
+version = "0.18.0"
 description = "Multi-channel Twitch chat bot with a composable command language"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -14,11 +14,11 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "pydantic>=2.7",
-    "pydantic-settings>=2.3",
+    "pydantic-settings>=2.16.0",
     "structlog>=24.1",
     # Shared job runtime, /api/v2 conventions and audit log with twitch-archive (ADR-0027). A tarball, since
     # the image has no git.
-    "vex-platform @ https://github.com/vEXOULZ/vex-platform/archive/refs/tags/v0.6.0.tar.gz",
+    "vex-platform @ https://github.com/vexouLuna/vex-platform/archive/refs/tags/v0.6.0.tar.gz",
     # Moderators write regexes that run on every chat line; `re` can't be stopped once it backtracks.
     "regex>=2024.11.6",
     # Windows has no system timezone database, and cron schedules run in the channel's own timezone.
@@ -28,7 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
-    "pytest-asyncio>=0.23",
+    "pytest-asyncio>=1.4.0",
     "httpx>=0.27",
     "pyyaml>=6",
     "ruff>=0.6",

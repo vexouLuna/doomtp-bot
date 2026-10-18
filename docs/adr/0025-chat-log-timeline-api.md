@@ -42,7 +42,7 @@ Two admin-only routes over the `chatlog` schema, in `chatlog/timeline.py`:
   reply, the **run** that links them: a command's run from `command_runs.trigger_id`, a reply's through
   `outbound_msgs.twitch_message_id` → `run_ref`. The run's `trigger_id` on a reply is the message that
   asked for it. A moderation entry carries the target and moderator with their logins, duration and
-  reason; a notification its type and payload.
+  reason; a notification its type and payload, and the chatter's own message (amended 2026-10-18, see below).
 - **Entries are read from `raw`** through the one reader (ADR-0024 §2), whatever the row was stored as.
   A message also has its `color` and `reply_parent_user`; a fragment keeps its `type`, `text`,
   `mention` and `emote_id` and adds what Twitch or backfill's enrichment knows (the emote's set, owner
@@ -59,6 +59,26 @@ Two admin-only routes over the `chatlog` schema, in `chatlog/timeline.py`:
 Message ids are Twitch's own UUIDs, the same over EventSub and the IRC backfill. How the archive joins
 them to its comments (by id where they match, otherwise by time and user) is the archive's decision, in
 its own repository.
+
+## Amendment (2026-10-18): a notification's own message
+
+A sub notice can carry the chatter's own message: a resub's "3 months already :)". Twitch shows it as a
+normal chat line under the system line, with the chatter's colour, badges and emotes. Until now a
+notification entry had only its payload, so readers could show that message only as plain `payload.text`,
+inside the notice. A notification entry now also has:
+
+- `fragments`: the message's fragments, in the same shape as a message's. They come from the event's
+  `message.fragments`, or are one text fragment built from `payload.text` when the row has none (the IRC
+  backfill). The list is empty when there is no message.
+- `badges` and `color`: the chatter's, from the event, as on a message (`[]` and `null` when unknown).
+- `user`: its login and display name now fall back to the event's chatter when the `users` table has no
+  row for them yet.
+
+These fields are added only, so older readers keep working (see Consequences). Legacy rows rebuilt from
+before ADR-0024 have no recorded event, so their message is at most one plain-text fragment, with no
+emotes, colour or badges.
+The archive stores a VOD's entries when it reads them, so archived VODs show these fields only after
+`bot_chat` reads them again.
 
 ## Options Considered
 

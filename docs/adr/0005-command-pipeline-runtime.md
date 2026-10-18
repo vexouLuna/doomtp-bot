@@ -10,7 +10,7 @@ Commands compose with pipes and chain operators, including `|`, `&&`, `||`, grou
 
 - an **exit code** (0 = success)
 - a **formatted message**, shown only if it's the final result
-- **structured data** that later commands can address (`!weather | echo "it's {1.celsius}C"`)
+- **structured data** that later commands can address (`!logsearch speedrun | echo "{1.count} found"`)
 
 The runtime also has to:
 
@@ -73,7 +73,7 @@ The limit was 8 when this ADR was written, with no recorded reason for that numb
 ### Option A: AST runtime with a three-part Result (chosen)
 **Pros:**
 - Syntax can change without touching commands.
-- Structured data enables `{1.celsius}`.
+- Structured data enables `{1.count}`.
 - Exit codes make `&&`/`||` natural.
 - Atomic preflight.
 - `!explain`, triggers and the API reuse everything.
