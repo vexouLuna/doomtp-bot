@@ -80,11 +80,11 @@ Built-in commands in the `core` module. They can't be disabled, have no cooldown
 |---------|--------|-------------|
 | `true` | `code 0`, no message, **data and message pass through from `{_}` if there is one** | Make something optional: `!shoutout {arg.1} \|\| true` |
 | `false` | `code 1`, no message | Testing, forcing a branch |
-| `default <value…>` | `code 0`, message = data = value | Fallback value: `!weather {arg.1+} \|\| default "weather unavailable"` |
+| `default <value…>` | `code 0`, message = data = value | Fallback value: `!logsearch {arg.1+} \|\| default "nobody said that"` |
 | `fail [code] <message…>` | `code` (default 1), message | Validation in custom commands: `!check {arg.1:int} <= 20 \|\| fail 2 "max 20 dice"` |
 | `echo <text…>` | `code 0`, message = data = text | Formatting |
 
-- **`true` passes data through.** In `( !weather x || true ) | echo "{_.celsius ?? ?}"`, a failed weather lookup doesn't break the pipe.
+- **`true` passes data through.** In `( !logsearch x || true ) | echo "{_.count ?? 0}"`, a search that finds nothing doesn't break the pipe.
 - A **`?` suffix** as shorthand for `|| true` (e.g. `!shoutout? {arg.1}`) is **deferred**, not rejected. It's tracked in §6.
 - **Value sentinels inside placeholders** are handled by `??` (`{x ?? default}`), not by new keywords.
 
@@ -95,7 +95,7 @@ Full registry: [namespaces.md](namespaces.md).
 ```
 { root . path  [ :type ]  [ ?? fallback ] }
 
-{1}  {1.celsius}  {_.code}           results
+{1}  {1.count}  {_.code}           results
 {arg.1}  {arg.3+}  {arg.1:int}       arguments (typed)
 {chatter.x}  {channel.chatter.x}     variables
 {publisher.chatter.x}
@@ -110,8 +110,8 @@ Full registry: [namespaces.md](namespaces.md).
 
 ```text
 !random 1-100 | echo dice rolled a {1}!
-!weather Lisbon | echo "it's {1.celsius}C now!" || echo "no weather for Lisbon"
-!weather {chatter.location ?? Lisbon} | echo "{_.condition}, {_.celsius}C"
+!logsearch speedrun | echo "{1.count} found" || echo "nobody said speedrun"
+!logsearch {chatter.topic ?? speedrun} | echo "{_.count} found"
 !random 1-20 > chatter.lastroll && echo "{chatter.name} rolled {1}"
 ( !random 1-6 | !check >= 5 ) && echo "win!" || echo "lose"
 !shoutout {arg.1:user} || true
@@ -120,7 +120,7 @@ echo "arrow -> stays literal ;) and so does (this)"
 !cc add roll "!random 1-{arg.1:int ?? 20} | echo {chatter.name} rolled {1} on a d{arg.1 ?? 20}"
 !cc add say "echo {chatter.display} says: {arg.1+}"
 !cc add pts "!var incr channel.chatter.points {arg.1:int ?? 1} | echo {chatter.name} now has {_} points"
-( !weather {arg.1+} || default "unknown" ) > chatter.last_weather
+( !logsearch {arg.1+} || default "nothing" ) > chatter.last_search
 !cc add guess "!check {arg.1:int} == {publisher.channel.secret} && ( !var incr publisher.channel.chatter.wins | echo {chatter.name} got it! ) || echo nope"
 ```
 

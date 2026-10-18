@@ -286,6 +286,14 @@ def capability_note(type_: str) -> str:
 @command(
     CommandSpec(
         name="listen",
+        data_schema={
+            "add": "{id: int, name: str}",
+            "list": "[{id: int, type: str, enabled: bool, expr: str, cooldown_s: int, user_cooldown_s: int, name?: str, pack?: str}]",
+            "test": "[{id: int, name: str, match: {group: str}}]",
+            "cooldown": "{cooldown_s: int, user_cooldown_s: int}",
+            "log": "{log_level: str}",
+            "rm, on, off": "none",
+        },
         module=MODULE,
         summary="Run an expression when a chat line matches a regex",
         description=LISTEN_USAGE,
@@ -350,6 +358,13 @@ def _test(ctx: CommandContext, text: str) -> Result:
 @command(
     CommandSpec(
         name="event",
+        data_schema={
+            "add": "{id: int}",
+            "list": "[{id: int, type: str, enabled: bool, expr: str, cooldown_s: int, user_cooldown_s: int, name?: str, pack?: str}]",
+            "cooldown": "{cooldown_s: int, user_cooldown_s: int}",
+            "log": "{log_level: str}",
+            "rm, on, off": "none",
+        },
         module=MODULE,
         summary="Run an expression when something happens on the channel",
         description=EVENT_USAGE,
@@ -389,6 +404,14 @@ async def event_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Re
 @command(
     CommandSpec(
         name="timer",
+        data_schema={
+            "add": "{id: int, every_s: int}",
+            "cron": "{id: int, cron: str, timezone: str}",
+            "list": "[{id: int, type: str, enabled: bool, expr: str, cooldown_s: int, user_cooldown_s: int, name?: str, pack?: str}]",
+            "cooldown": "{cooldown_s: int, user_cooldown_s: int}",
+            "log": "{log_level: str}",
+            "rm, on, off": "none",
+        },
         module=MODULE,
         summary="Run an expression on a schedule",
         description=TIMER_USAGE,
@@ -467,6 +490,11 @@ async def _add_cron(ctx: CommandContext, args: Args, values: list[str]) -> Resul
 @command(
     CommandSpec(
         name="trigger",
+        data_schema={
+            "add, listen": "{id: int}",
+            "list": "[{id: int, type: str, enabled: bool, expr: str, cooldown_s: int, user_cooldown_s: int, name?: str, pack?: str}]",
+            "rm, on, off": "none",
+        },
         module=MODULE,
         summary="Old name for listen and event, going away after this release",
         description=TRIGGER_USAGE,

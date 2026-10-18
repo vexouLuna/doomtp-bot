@@ -125,3 +125,28 @@ async def test_links_are_defanged_where_the_bot_may_not_post_them() -> None:
     await outbox.send("plain", "see https://example.com/a.b")
     assert [s[1] for s in sender.sent] == ["see https://example.com/a.b", "see https://example dot com/a.b"]
     assert out_log.rows[-1]["text_prefilter"] == "see https://example.com/a.b"
+
+
+async def test_a_channel_with_the_bot_off_never_gets_a_message() -> None:
+    sender, out_log, t = FakeSender(), FakeLog(), FakeTime()
+    outbox = Outbox(sender, out_log, clock=t.clock, sleep=t.sleep, enabled_for=lambda c: c != "off")
+    assert [r.dropped_reason for r in await outbox.send("off", "hello", reply_to="m1")] == ["bot_off"]
+    assert sender.sent == []
+    assert out_log.rows[0]["dropped_reason"] == "bot_off" and out_log.rows[0]["text_prefilter"] == "hello"
+    await outbox.send("on", "hello")
+    assert sender.sent == [("on", "hello", None)]
+
+
+async def test_switching_the_bot_off_stops_a_message_waiting_for_the_rate_limit() -> None:
+    sender, t = FakeSender(), FakeTime()
+    enabled = {"c1": True}
+
+    async def sleep(seconds: float) -> None:
+        enabled["c1"] = False  # a moderator switches the bot off while the message waits
+        await t.sleep(seconds)
+
+    outbox = Outbox(sender, rate_for=lambda c: (1, 10.0), clock=t.clock, sleep=sleep, enabled_for=enabled.get)
+    await outbox.send("c1", "first")
+    results = await outbox.send("c1", "second")
+    assert [r.dropped_reason for r in results] == ["bot_off"]
+    assert [s[1] for s in sender.sent] == ["first"]

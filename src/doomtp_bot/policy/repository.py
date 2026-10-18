@@ -61,6 +61,7 @@ class PolicyRepository:
             "prefix", "active", "status", "tier", "capabilities", "reply_hold_ms", "log_enabled", "history_backfill",
             "public_log", "quiet_errors", "cc_edit_notice", "timezone", "channel_var_write_role", "grant_min_role",
             "publish_min_role", "create_min_role", "var_admin_role", "automod_action", "automod_timeout_s",
+            "bot_enabled", "slur_filter",
         }  # fmt: skip
         if column not in allowed:
             raise ValueError(f"unknown channel setting {column}")

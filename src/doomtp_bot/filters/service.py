@@ -1,6 +1,7 @@
 """Filter storage and the two places filtering happens (architecture §9).
 
-1. **Every outbound message**, in the Outbox, after placeholders are substituted. Mandatory.
+1. **Every outbound message**, in the Outbox, after placeholders are substituted. Mandatory, and the
+   built-in slur list (filters/slurs.py) runs after the channel's own entries.
 2. **Content users store** — custom command names and bodies, variable values — checked at save time.
 
 Entries are held in memory per scope and rebuilt on write, the same shape as the policy snapshot.
@@ -8,6 +9,7 @@ Entries are held in memory per scope and rebuilt on write, the same shape as the
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 
 import structlog
@@ -17,6 +19,7 @@ from doomtp_bot.clock import now_ms
 from doomtp_bot.core import metrics
 from doomtp_bot.filters.matcher import Action, ChannelFilter, FilterEntry, FilterError, FilterResult, Kind
 from doomtp_bot.filters.matcher import compile_entry as _compile
+from doomtp_bot.filters.slurs import slur_filter
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.storage.db import Connection, fetch_value, transaction
 
@@ -27,8 +30,9 @@ ACTIONS: tuple[Action, ...] = ("mask", "replace", "tag", "block")
 
 
 class FilterService:
-    def __init__(self, conn: Connection) -> None:
+    def __init__(self, conn: Connection, *, slur_level: Callable[[str], str] = lambda channel_id: "base") -> None:
         self.conn = conn
+        self.slur_level = slur_level  # a channel's `slur_filter` setting
         self._entries: dict[str, list[FilterEntry]] = {}
         self._compiled: dict[str, ChannelFilter] = {}
 
@@ -67,6 +71,9 @@ class FilterService:
     def apply(self, channel_id: str, text: str) -> tuple[str | None, list[str]]:
         """Outbox hook: censored text (None blocks the send) and the patterns that matched."""
         result = self._filter_for(channel_id).apply(text)
+        if result.text is not None:  # separate, so the channel's allow entries can't let a slur through
+            slurs = slur_filter(self.slur_level(channel_id)).apply(result.text)
+            result = FilterResult(slurs.text, [*result.hits, *slurs.hits])
         for hit in result.hits:
             metrics.FILTER_HITS.inc(action=hit.action)
         if result.changed:

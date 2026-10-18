@@ -31,7 +31,7 @@ MODULE = "basic"
             ),
             Param("2+", "seed", description="Anything; the same seed always gives the same pick"),
         ),
-        data_schema={"range": "int", "list or map": "{key, value}"},
+        data_schema={"a range": "int", "a list or map": "{key: int or str, value: any}"},
         examples=(
             Example("{sign}random", "42"),
             Example("{sign}random 1-6 | echo you rolled {_1}", "you rolled 4"),
