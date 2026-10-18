@@ -99,6 +99,10 @@ def _one_message(text: str) -> str:
 @command(
     CommandSpec(
         name="help",
+        data_schema={
+            "": "{builtin: [str], custom: [str], link: str?}",
+            "a command": "{name: str, usage: str, summary: str}",
+        },
         module=MODULE,
         summary="Link the bot's docs (or list the commands you can use), or show how to use one",
         params=(Param("1", "command", description="A command name"),),
@@ -132,6 +136,7 @@ async def help_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
 @command(
     CommandSpec(
         name="commands",
+        data_schema={"": "{builtin: [str], custom: [str], link: str?}"},
         module=MODULE,
         summary="Link this channel's command page, or list the commands you can use here",
         examples=(Example("{sign}commands", "commands at https://…/channels/<channel>"),),

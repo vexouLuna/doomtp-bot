@@ -52,6 +52,8 @@ SETTING_RANKS: dict[str, int] = {
     "automod_action": MODERATOR_RANK,
     "automod_timeout_s": MODERATOR_RANK,
     "public_log": MODERATOR_RANK,
+    "bot_enabled": MODERATOR_RANK,  # silencing the bot is a safety switch any moderator may pull
+    "slur_filter": MODERATOR_RANK,
     "log_enabled": BROADCASTER_RANK,
     "history_backfill": BROADCASTER_RANK,
     "channel_var_write_role": BROADCASTER_RANK,
