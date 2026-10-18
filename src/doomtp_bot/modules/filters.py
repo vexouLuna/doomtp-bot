@@ -42,6 +42,12 @@ def _scope(ctx: CommandContext, words: list[str]) -> str:
 @command(
     CommandSpec(
         name="filter",
+        data_schema={
+            "list": "[{id: int, pattern: str, kind: str}]",
+            "test": "{blocked: bool, text?: str, hits?: [str]}",
+            "add": "{id: int}",
+            "rm, on, off": "none",
+        },
         module=MODULE,
         toggleable=False,
         summary="Manage the channel's word filter",

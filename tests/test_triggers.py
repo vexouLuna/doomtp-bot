@@ -32,7 +32,7 @@ from doomtp_bot.triggers.service import (
     parse_every,
 )
 from doomtp_bot.triggers.timers import ChatActivity, TimerScheduler
-from tests.fakes import FakeClock, TickingClock, policy_with_channels
+from tests.fakes import SETUP, FakeClock, TickingClock, policy_with_channels
 
 CHANNEL_ID, CHANNEL_LOGIN = "100", "doomtp"
 USERS = {"mod": ("300", "mod", "Mod"), "alice": ("400", "alice", "Alice")}
@@ -213,7 +213,17 @@ async def test_an_event_trigger_reads_the_payload(h: Harness) -> None:
     assert h.sender.sent == ["welcome raider with 42 raiders"]
 
 
+async def test_nothing_runs_where_the_bot_is_switched_off(h: Harness) -> None:
+    await h.say("mod", "!trigger add raid echo welcome {event.user.name}")
+    payload = {"user": {"id": "500", "name": "raider"}}
+    found = h.triggers.event_triggers(CHANNEL_ID, "raid", payload)
+    await h.policy.mutate(lambda r: r.set_channel_field(CHANNEL_ID, "bot_enabled", False, SETUP))
+    assert await h.runner.run(found[0], channel_login=CHANNEL_LOGIN, event=payload) is None
+    assert h.sender.sent == []
+
+
 async def test_match_conditions_filter_events(h: Harness) -> None:
+
     await h.triggers.add(
         channel_id=CHANNEL_ID,
         type_="raid",
