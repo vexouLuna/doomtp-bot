@@ -93,6 +93,7 @@ def _replied(ctx: CommandContext, what: str) -> dict[str, str]:
 @command(
     CommandSpec(
         name="timeout",
+        data_schema={"": "{user: str, seconds: int}"},
         module=MODULE,
         summary="Time a chatter out, as the bot",
         description=(
@@ -135,6 +136,7 @@ async def timeout_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> 
 @command(
     CommandSpec(
         name="ban",
+        data_schema={"": "{user: str}"},
         module=MODULE,
         summary="Ban a chatter, as the bot",
         description=(
@@ -163,6 +165,7 @@ async def ban_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Resu
 @command(
     CommandSpec(
         name="unban",
+        data_schema={"": "{user: str}"},
         module=MODULE,
         aliases=("untimeout",),
         summary="Lift a chatter's ban or timeout",
@@ -184,6 +187,7 @@ async def unban_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Re
 @command(
     CommandSpec(
         name="warn",
+        data_schema={"": "{user: str}"},
         module=MODULE,
         summary="Warn a chatter, as the bot",
         description=("warn <user> <reason…>: they must acknowledge the reason before they can chat again."),
@@ -210,6 +214,7 @@ async def warn_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
 @command(
     CommandSpec(
         name="announce",
+        data_schema={"": "{text: str, color: str}"},
         module=MODULE,
         summary="Post a highlighted announcement, as the bot",
         description=(
@@ -240,6 +245,7 @@ async def announce_cmd(ctx: CommandContext, args: Args, stdin: Result | None) ->
 @command(
     CommandSpec(
         name="mecho",
+        data_schema={"": "[str]: the lines sent"},
         module=MODULE,
         summary="Say several lines, one message each",
         description=(
@@ -278,6 +284,7 @@ async def mecho_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Re
 @command(
     CommandSpec(
         name="chatmode",
+        data_schema={"": "{mode: str, on: bool}"},
         module=MODULE,
         summary="Turn Twitch's chat modes on or off",
         description=(
@@ -336,6 +343,7 @@ async def _duration(text: str) -> int:
 @command(
     CommandSpec(
         name="clear",
+        data_schema={"": "none"},
         module=MODULE,
         summary="Clear the whole chat, as the bot",
         description="clear: removes every message in chat, like Twitch's /clear. Says nothing itself.",
@@ -354,6 +362,7 @@ async def clear_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Re
 @command(
     CommandSpec(
         name="shield",
+        data_schema={"": "{on: bool}"},
         module=MODULE,
         summary="Turn Twitch's Shield Mode on or off",
         description="shield on|off: uses the channel's Shield Mode settings from Twitch.",
@@ -374,6 +383,7 @@ async def shield_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> R
 @command(
     CommandSpec(
         name="delete",
+        data_schema={"": "{user: str}"},
         module=MODULE,
         summary="Delete the message you reply to",
         description=(
@@ -401,6 +411,7 @@ async def delete_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> R
 @command(
     CommandSpec(
         name="pin",
+        data_schema={"": "{user: str}"},
         module=MODULE,
         summary="Pin the message you reply to",
         description=(
@@ -427,6 +438,7 @@ async def pin_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Resu
 @command(
     CommandSpec(
         name="unpin",
+        data_schema={"": "none"},
         module=MODULE,
         summary="Unpin a message",
         description=(
@@ -450,6 +462,7 @@ async def unpin_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Re
 @command(
     CommandSpec(
         name="settitle",
+        data_schema={"": "{title: str}"},
         module=MODULE,
         summary="Set the stream title",
         description=(
@@ -474,6 +487,7 @@ async def settitle_cmd(ctx: CommandContext, args: Args, stdin: Result | None) ->
 @command(
     CommandSpec(
         name="setgame",
+        data_schema={"": "{category: str, id: str}"},
         module=MODULE,
         summary="Set the stream category",
         description=(
@@ -500,6 +514,7 @@ async def setgame_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> 
 @command(
     CommandSpec(
         name="marker",
+        data_schema={"": "{description: str}"},
         module=MODULE,
         summary="Place a stream marker",
         description=(
@@ -525,6 +540,7 @@ async def marker_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> R
 @command(
     CommandSpec(
         name="raid",
+        data_schema={"": "{user: str}"},
         module=MODULE,
         summary="Raid another channel",
         description=(
@@ -550,6 +566,7 @@ async def raid_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
 @command(
     CommandSpec(
         name="shoutout",
+        data_schema={"": "{user: str}"},
         module=MODULE,
         summary="Send Twitch's shoutout card for another streamer",
         description=(

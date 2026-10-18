@@ -22,6 +22,9 @@ FLAGS = {"--run", "--as-body"}
 @command(
     CommandSpec(
         name="explain",
+        data_schema={
+            "": "{expression: str, context: str, ast: any, parse_error: str?, invocations: [map], stores: [map], failure: {code: int, message: str?, data: any}?, failed_index: int?, ran: bool, result: {code: int, message: str?}?, executed: [map], would_send: [str], report_url?: str}"
+        },
         module=MODULE,
         summary="Show what an expression would do, and why",
         description=USAGE,

@@ -154,8 +154,11 @@ class Dispatcher:
             if self.bot_badges is not None:  # whether the bot may post links here (ADR-0019)
                 self.bot_badges.saw(msg.channel_id, msg.badges)
             return
+        if settings is not None and not settings.bot_enabled:
+            return  # switched off: logged above, and nothing runs (the outbox refuses to speak too)
         if BOT_BADGE_SET_IDS & {b.set_id for b in msg.badges}:
             return
+
         if self.policy.is_ignored(msg.channel_id, msg.user_id):
             # Someone who ignored themselves can still take it back; nobody else gets past (§5.4).
             if is_unignore_me(msg.text, prefix) and self.policy.ignored_only_by_self(msg.channel_id, msg.user_id):
