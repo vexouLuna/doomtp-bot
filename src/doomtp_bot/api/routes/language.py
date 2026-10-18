@@ -217,6 +217,7 @@ async def commands(request: Request) -> dict[str, Any]:
                     }
                     for p in spec.params
                 ],
+                "data": spec.data_schema,  # what {_N} holds afterwards, per form
                 "examples": [
                     {"invocation": e.invocation, "output": e.output}
                     for e in (ex.rendered(DEFAULT_PREFIX) for ex in spec.examples)

@@ -272,13 +272,24 @@ def _payload(kind: str, event: dict[str, Any], at: int) -> dict[str, Any]:
 
 def _notification(row: dict[str, Any]) -> dict[str, Any]:
     event = events.notification(row["raw_format"], row["raw"], row["enrichment"])
+    payload = _payload(row["type"], event, row["sent_at"])
+    body = event.get("message")
+    # a chat notice's own message, so it renders as a chat line; a redemption or cheer has only its text
+    fragments = body.get("fragments") if isinstance(body, dict) else None
+    if not fragments and payload.get("text"):
+        fragments = [{"type": "text", "text": payload["text"]}]
+    login = row["user_login"] or event.get("chatter_user_login") or event.get("user_login")
+    name = row["display_name"] or event.get("chatter_user_name") or event.get("user_name")
     return {
         "kind": "notification",
         "id": row["id"],
         "at": row["sent_at"],
-        "user": _user(row["user_id"], row["user_login"], row["display_name"]),
+        "user": _user(row["user_id"], login, name),
         "type": row["type"],
-        "payload": _payload(row["type"], event, row["sent_at"]),
+        "payload": payload,
+        "fragments": [events.entry_fragment(f) for f in fragments or []],
+        "badges": event.get("badges") or [],
+        "color": event.get("color") or None,
         "source": row["source"],
     }
 

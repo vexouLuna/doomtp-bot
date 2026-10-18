@@ -52,50 +52,82 @@ def trigger_payload(notice: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 @dataclass(frozen=True, slots=True)
+class FieldDoc:
+    """One readable field: its path below the root, its type, what it holds, and a value it can have."""
+
+    name: str
+    type: str
+    description: str
+    example: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class EventDoc:
     fires: str  # what sets it off
-    variables: tuple[tuple[str, str], ...] = ()  # ({event.*} name, meaning), beyond `type`
+    variables: tuple[FieldDoc, ...] = ()  # the {event.*} fields, beyond `type`
     chatter: str = ""  # who `$chatter` is in the run; empty: nobody
     needs: str = ""  # what the channel must have granted
     match: str = ""  # the trigger's own conditions
 
 
-_USER = ("user.name, user.display, user.id", "the person behind the event")
-_PERSON = "the event's user"
+@dataclass(frozen=True, slots=True)
+class RootDoc:
+    about: str
+    available: str  # where the root can be read
+    fields: tuple[FieldDoc, ...]
+
+
+def _user(prefix: str, who: str, *, display: bool = True, missing: str = "") -> tuple[FieldDoc, ...]:
+    """`{prefix}.id`, `.name` and `.display` of a person in an event."""
+    note = f"; {missing}" if missing else ""
+    rows = [
+        FieldDoc(f"{prefix}.id", "str", f"Twitch user id of {who}{note}", "80730642"),
+        FieldDoc(f"{prefix}.name", "str", f"login of {who}, lowercase", "testfromuser"),
+    ]
+    if display:
+        rows.append(FieldDoc(f"{prefix}.display", "str", f"display name of {who}", "TestFromUser"))
+    return tuple(rows)
+
+
+_TIER = FieldDoc("tier", "str", "sub tier: 1000, 2000 or 3000 (Prime counts as 1000)", "1000")
 
 EVENTS: dict[str, EventDoc] = {
     "redemption": EventDoc(
         "a viewer redeems a channel point reward",
         (
-            _USER,
-            ("input", "the text the viewer entered, if the reward asks for one"),
-            ("reward.title, reward.id, reward.cost", "the reward"),
-            ("status", "the redemption's status"),
+            *_user("user", "the viewer"),
+            FieldDoc("input", "str", "the text the viewer entered; empty when the reward asks for none", "hello"),
+            FieldDoc("text", "str", "the same as `input`", "hello"),
+            FieldDoc("reward.id", "str", "the reward's Twitch id", "92af127c-7326-4483-a52b-b0da0be61c01"),
+            FieldDoc("reward.title", "str", "the reward's title", "Hydrate"),
+            FieldDoc("reward.cost", "int", "its price in channel points", "500"),
+            FieldDoc("status", "str", "unfulfilled, fulfilled or canceled", "unfulfilled"),
         ),
-        _PERSON,
+        "the viewer",
         needs="the broadcaster connects the bot (full tier)",
         match="reward_id",
     ),
     "raid": EventDoc(
         "another channel raids this one",
-        (("user.name, user.display, user.id", "the raiding channel"), ("viewers", "how many came with the raid")),
+        (*_user("user", "the raiding channel"), FieldDoc("viewers", "int", "how many came with the raid", "42")),
         "the raider",
         match="min_viewers",
     ),
     "sub": EventDoc(
         "a viewer subscribes for the first time",
-        (_USER, ("tier", "1000, 2000 or 3000"), ("months", "always 1")),
+        (*_user("user", "the subscriber"), _TIER, FieldDoc("months", "int", "always 1", "1")),
         "the subscriber",
     ),
     "resub": EventDoc(
         "a viewer renews, and shares it",
         (
-            _USER,
-            ("tier", "1000, 2000 or 3000"),
-            ("months", "total months subscribed"),
-            ("streak_months", "months in a row, if shared"),
-            ("prime, gift", "true or false"),
-            ("text", "the message they added"),
+            *_user("user", "the subscriber"),
+            _TIER,
+            FieldDoc("months", "int", "total months subscribed", "14"),
+            FieldDoc("streak_months", "int", "months in a row; missing when they don't share it", "3"),
+            FieldDoc("prime", "bool", "paid with Prime", "false"),
+            FieldDoc("gift", "bool", "the sub was a gift", "false"),
+            FieldDoc("text", "str", "the message they added", "14 months!"),
         ),
         "the subscriber",
         match="min_months",
@@ -103,20 +135,20 @@ EVENTS: dict[str, EventDoc] = {
     "gift_sub": EventDoc(
         "a viewer gifts a sub to one person (a community gift of five fires this five times)",
         (
-            ("user.name, user.display, user.id", "the gifter (empty when anonymous)"),
-            ("recipient.name, recipient.display, recipient.id", "who got it"),
-            ("tier", "1000, 2000 or 3000"),
-            ("months", "months gifted"),
+            *_user("user", "the gifter", missing="the whole `user` is missing when anonymous"),
+            *_user("recipient", "who got it"),
+            _TIER,
+            FieldDoc("months", "int", "months gifted", "1"),
         ),
         "the gifter",
     ),
     "cheer": EventDoc(
         "a viewer cheers bits",
         (
-            ("user.name, user.display, user.id", "the cheerer (empty when anonymous)"),
-            ("bits", "how many"),
-            ("text", "the cheer's message"),
-            ("anonymous", "true or false"),
+            *_user("user", "the cheerer", missing="the whole `user` is missing when anonymous"),
+            FieldDoc("bits", "int", "how many", "250"),
+            FieldDoc("text", "str", "the cheer's message", "This is a test event."),
+            FieldDoc("anonymous", "bool", "cheered anonymously", "false"),
         ),
         "the cheerer",
         needs="the broadcaster connects the bot (full tier)",
@@ -124,33 +156,46 @@ EVENTS: dict[str, EventDoc] = {
     ),
     "follow": EventDoc(
         "a viewer follows the channel",
-        (_USER, ("followed_at", "when, in epoch milliseconds")),
+        (
+            *_user("user", "the new follower"),
+            FieldDoc("followed_at", "int", "when, in epoch milliseconds", "1767268800000"),
+        ),
         "the new follower",
         needs="the bot is a moderator in the channel",
     ),
     "stream_online": EventDoc(
         "the bot's once-a-minute check sees the stream go live",
         (
-            ("title, game, viewers", "as Twitch lists the stream"),
-            ("started_at", "ISO time the stream started"),
-            ("channel.login", "the channel"),
+            FieldDoc("live", "bool", "always true", "true"),
+            FieldDoc("title", "str", "stream title, as Twitch lists it", "late night doom"),
+            FieldDoc("game", "str", "category", "DOOM"),
+            FieldDoc("viewers", "int", "viewer count", "12"),
+            FieldDoc("started_at", "str", "ISO time the stream started", "2026-10-17T20:00:00Z"),
+            FieldDoc("channel.login", "str", "the channel", "doomtp"),
         ),
     ),
     "stream_offline": EventDoc(
         "the same check sees the stream is no longer live",
-        (("channel.login", "the channel"),),
+        (FieldDoc("live", "bool", "always false", "false"), FieldDoc("channel.login", "str", "the channel", "doomtp")),
     ),
     "pyramid": EventDoc(
         "a chatter builds an emote pyramid, row by row, or breaks one",
         (
-            ("phase", "step, complete or broken"),
-            ("direction", "up or down, on a step"),
-            ("token", "the emote"),
-            ("width, peak", "this row's width, and the widest so far"),
-            ("user.name, user.display", "the builder"),
-            ("breaker.name, breaker.display", "who broke it, on broken"),
-            ("by_bot, self_broken", "true or false"),
-            ("pyramid_id", "ties the rows of one pyramid together"),
+            FieldDoc("phase", "str", "step, complete or broken", "step"),
+            FieldDoc("direction", "str", "up or down on a step; empty otherwise", "up"),
+            FieldDoc("token", "str", "the emote", "Kappa"),
+            FieldDoc("width", "int", "this row's width", "3"),
+            FieldDoc("peak", "int", "the widest row so far", "3"),
+            *_user("user", "the builder"),
+            *_user("breaker", "who broke it", missing="only on broken"),
+            FieldDoc("by_bot", "bool", "the bot finished or broke it", "false"),
+            FieldDoc("self_broken", "bool", "the builder broke their own pyramid", "false"),
+            FieldDoc(
+                "pyramid_id",
+                "str",
+                "the message id of its first row; ties its rows together",
+                "b7e0f1c2-4d3a-4e5f-9a8b-1c2d3e4f5a6b",
+            ),
         ),
         "the builder, or the breaker on broken",
     ),
@@ -158,76 +203,155 @@ EVENTS: dict[str, EventDoc] = {
     "cron": EventDoc("the clock matches its cron schedule"),
     "listener": EventDoc(
         "a chat line matches its regex",
-        (("user.name, user.id", "who wrote it"), ("message", "the line"), ("match.*", "the regex's named captures")),
+        (
+            *_user("user", "who wrote it", display=False),
+            FieldDoc("message", "str", "the line", "anyone playing doom?"),
+        ),
         "the author",
+        match="the regex; its captures are `{match.*}`",
     ),
     "bot_online": EventDoc(
         "the bot is in chat: at start, after an update, or after its Twitch connection was started again. "
         "A channel hears it at most every 15 minutes",
         (
-            ("reason", "start, update or reconnect"),
-            ("cause", "on reconnect, why the connection was restarted"),
-            ("down_s", "seconds it was gone, when known"),
-            ("version", "the running version"),
+            FieldDoc("reason", "str", "start, update or reconnect", "start"),
+            FieldDoc("cause", "str", "on reconnect, why the connection was restarted", "not hearing chat"),
+            FieldDoc("down_s", "int", "seconds it was gone; missing when not known", "40"),
+            FieldDoc("version", "str", "the running version", "1.4.0"),
         ),
     ),
     "bot_updated": EventDoc(
         "the version changed since the last run; fires just before bot_online",
-        (("version", "the new version"), ("previous", "the version before")),
+        (
+            FieldDoc("version", "str", "the new version", "1.4.0"),
+            FieldDoc("previous", "str", "the version before", "1.3.2"),
+        ),
     ),
     "bot_joined": EventDoc("the bot is asked into the channel (!join or the website), not at every start"),
     "bot_modded": EventDoc("the bot's hourly check sees it became a moderator here"),
     "bot_unmodded": EventDoc("the same check sees it stopped being one"),
 }
 
-#: `{$root.field}` descriptions. Every field of `lang.parser.BOT_FIELDS` has one.
+#: Every root a placeholder reads that the bot fills in, keyed as typed. The `$` roots' field names equal
+#: `lang.parser.BOT_FIELDS`; `{event.*}` is per trigger type (EVENTS), `{match.*}` the listener's captures.
+ROOTS: dict[str, RootDoc] = {
+    "$chatter": RootDoc(
+        "who ran the command, or the event's user in a trigger; missing when nobody did",
+        "anywhere",
+        (
+            FieldDoc("id", "str", "Twitch user id", "80730642"),
+            FieldDoc("name", "str", "login, lowercase", "alice"),
+            FieldDoc("display", "str", "display name", "Alice"),
+            FieldDoc("rank", "int", "permission rank in this channel (higher can do more)", "20"),
+            FieldDoc("roles", "list", "the roles they hold here, lowest first", "[everyone, subscriber]"),
+            FieldDoc("is_sub", "bool", "subscriber", "true"),
+            FieldDoc("is_vip", "bool", "VIP", "false"),
+            FieldDoc("is_mod", "bool", "moderator", "false"),
+        ),
+    ),
+    "$channel": RootDoc(
+        "the channel the line is in",
+        "anywhere",
+        (
+            FieldDoc("id", "str", "Twitch channel id", "40174384"),
+            FieldDoc("name", "str", "login, lowercase", "doomtp"),
+            FieldDoc("display", "str", "display name", "DoomTP"),
+            FieldDoc("prefix", "str", "the command sign here", "!"),
+            FieldDoc("live", "bool", "whether the stream is live", "true"),
+            FieldDoc("title", "str", "stream title; missing when offline", "late night doom"),
+            FieldDoc("game", "str", "category; missing when offline", "DOOM"),
+            FieldDoc("viewers", "int", "viewer count; 0 when offline", "12"),
+            FieldDoc("uptime", "int", "seconds since the stream started; missing when offline", "5400"),
+            FieldDoc("next_stream", "map", "the next stream on the Twitch schedule; missing when none", ""),
+            FieldDoc("next_stream.title", "str", "its title; missing when it has none", "doom marathon"),
+            FieldDoc("next_stream.category", "str", "its category; missing when it has none", "DOOM"),
+            FieldDoc("next_stream.start", "str", "ISO time it starts", "2026-10-18T20:00:00Z"),
+            FieldDoc("next_stream.in", "int", "seconds from now until it starts", "86400"),
+        ),
+    ),
+    "$publisher": RootDoc(
+        "who published the custom command being run",
+        "custom commands",
+        (
+            FieldDoc("id", "str", "Twitch user id", "40174384"),
+            FieldDoc("name", "str", "login, lowercase", "doomtp"),
+            FieldDoc("display", "str", "display name", "DoomTP"),
+        ),
+    ),
+    "$bot": RootDoc(
+        "the bot itself",
+        "anywhere",
+        (
+            FieldDoc("name", "str", "the bot's name", "doomtp-bot"),
+            FieldDoc("id", "str", "its Twitch id (empty for now)", ""),
+            FieldDoc("version", "str", "running version", "1.4.0"),
+            FieldDoc("release", "str", "the tag or branch the image was built from; missing from a checkout", "v1.4.0"),
+            FieldDoc("commit", "str", "the short commit it was built from; missing from a checkout", "e8f7187"),
+            FieldDoc("uptime", "int", "seconds since this process started", "3600"),
+        ),
+    ),
+    "$now": RootDoc(
+        "the time of the run, in the channel's timezone",
+        "anywhere",
+        (
+            FieldDoc("iso", "str", "ISO 8601 time, to the second", "2026-10-17T21:30:00+02:00"),
+            FieldDoc("unix", "int", "epoch seconds", "1792265400"),
+            FieldDoc("date", "str", "the date, YYYY-MM-DD", "2026-10-17"),
+            FieldDoc("time", "str", "the time, HH:MM", "21:30"),
+            FieldDoc("weekday", "str", "day of the week, in English", "Saturday"),
+        ),
+    ),
+    "cmd": RootDoc(
+        "the custom command being run",
+        "custom commands",
+        (
+            FieldDoc("name", "str", "its name", "hug"),
+            FieldDoc("alias", "str", "the name it was called by", "hug"),
+            FieldDoc("id", "str", "its id", "cc_3k9x"),
+            FieldDoc("version", "int", "its published version", "2"),
+            FieldDoc("owner", "str", "the publisher's login", "doomtp"),
+        ),
+    ),
+    "run": RootDoc(
+        "this run",
+        "anywhere",
+        (
+            FieldDoc("id", "str", "the run's id, as the log and explain show it", "r_01JA2B3C"),
+            FieldDoc("trigger", "str", "what started it: chat, or a trigger type", "chat"),
+        ),
+    ),
+    "cooldown": RootDoc(
+        "the cooldown that refused the command",
+        "`on_cooldown` callbacks",
+        (
+            FieldDoc("command", "str", "the command, by its canonical name", "random"),
+            FieldDoc("tier", "str", "the role whose cooldown rule applied", "everyone"),
+            FieldDoc("tier_remaining", "int", "seconds left on the shared cooldown", "12"),
+            FieldDoc("user_remaining", "int", "seconds left on this chatter's own cooldown", "0"),
+        ),
+    ),
+    "denied": RootDoc(
+        "why the command was refused",
+        "`on_denied` callbacks",
+        (
+            FieldDoc("command", "str", "the command, by its canonical name", "timeout"),
+            FieldDoc("required_role", "str", "the role it needs", "moderator"),
+            FieldDoc("rank", "int", "the chatter's rank", "20"),
+        ),
+    ),
+}
+
+#: The older shapes `GET /api/v1/language` keeps serving: `$` field → description, and `$` root → about.
 BOT_FIELD_DOCS: dict[str, dict[str, str]] = {
-    "chatter": {
-        "id": "Twitch user id",
-        "name": "login, lowercase",
-        "display": "display name",
-        "rank": "permission rank, a number",
-        "roles": "the roles they hold here",
-        "is_sub": "subscriber",
-        "is_vip": "VIP",
-        "is_mod": "moderator",
-    },
-    "channel": {
-        "id": "Twitch channel id",
-        "name": "login, lowercase",
-        "display": "display name",
-        "prefix": "the command sign here",
-        "live": "whether the stream is live",
-        "title": "stream title, when live",
-        "game": "category, when live",
-        "viewers": "viewer count, when live",
-        "uptime": "seconds since the stream started, when live",
-        "next_stream": "the next scheduled stream, from the Twitch schedule",
-    },
-    "publisher": {"id": "Twitch id", "name": "login", "display": "display name"},
-    "bot": {
-        "name": "the bot's name",
-        "id": "its Twitch id (empty for now)",
-        "version": "running version",
-        "release": "the release it was built from",
-        "commit": "the commit it was built from",
-        "uptime": "seconds since this process started",
-    },
-    "now": {
-        "iso": "ISO 8601 time",
-        "unix": "epoch seconds",
-        "date": "the date",
-        "time": "the time",
-        "weekday": "day of the week",
-    },
+    root[1:]: {f.name: f.description for f in doc.fields if "." not in f.name}
+    for root, doc in ROOTS.items()
+    if root.startswith("$")
 }
-BOT_ROOT_DOCS: dict[str, str] = {
-    "chatter": "who ran the command, or the event's user in a trigger; missing when nobody did",
-    "channel": "the channel the line is in",
-    "publisher": "who published the custom command being run; only inside one",
-    "bot": "the bot itself",
-    "now": "the time of the run",
-}
+BOT_ROOT_DOCS: dict[str, str] = {root[1:]: doc.about for root, doc in ROOTS.items() if root.startswith("$")}
+
+
+def _field(f: FieldDoc) -> dict[str, str]:
+    return {"name": f.name, "type": f.type, "description": f.description, "example": f.example}
 
 
 def reference() -> dict[str, Any]:
@@ -237,13 +361,56 @@ def reference() -> dict[str, Any]:
             {
                 "type": type_,
                 "fires": doc.fires,
-                "variables": [{"name": n, "meaning": m} for n, m in doc.variables],
+                "variables": [{**_field(f), "meaning": f.description} for f in doc.variables],
                 "chatter": doc.chatter,
                 "needs": doc.needs,
                 "match": doc.match,
             }
             for type_, doc in EVENTS.items()
         ],
+        "root_docs": {
+            root: {"about": doc.about, "available": doc.available, "fields": [_field(f) for f in doc.fields]}
+            for root, doc in ROOTS.items()
+        },
         "bot_field_docs": BOT_FIELD_DOCS,
         "bot_root_docs": BOT_ROOT_DOCS,
     }
+
+
+def _table(fields: tuple[FieldDoc, ...], root: str) -> list[str]:
+    rows = ["| Field | Type | Description | Example |", "|---|---|---|---|"]
+    for f in fields:
+        example = f"`{f.example}`" if f.example else ""
+        rows.append(f"| `{{{root}.{f.name}}}` | {f.type} | {f.description} | {example} |")
+    return rows
+
+
+def markdown() -> str:
+    """The generated part of docs/namespaces.md: a summary of the roots, then a table per root and per
+    trigger type. `scripts/reference_docs.py` writes it; a test fails when the file is behind."""
+    out = ["| Root | What | Read in |", "|------|------|---------|"]
+    out += [f"| `{{{root}.*}}` | {doc.about} | {doc.available} |" for root, doc in ROOTS.items()]
+    out += [
+        "| `{event.*}` | the trigger's payload, per type (§4.2) | custom commands and triggers |",
+        "| `{match.*}` | a listener regex's captures: `0` (whole match), `1..N`, named groups | listeners |",
+        "",
+        "### 4.1 Root fields",
+        "",
+    ]
+
+    for root, doc in ROOTS.items():
+        out += [f"#### `{root}`", "", f"{doc.about[0].upper()}{doc.about[1:]}. Read in: {doc.available}.", ""]
+        out += [*_table(doc.fields, root), ""]
+    out += [
+        "### 4.2 Event fields",
+        "",
+        "Every trigger's `{event.type}` (str) is its trigger type. The rest depends on the type.",
+        "",
+    ]
+    for type_, event in EVENTS.items():
+        out += [f"#### `{type_}`", "", f"Fires when {event.fires}."]
+        if event.chatter:
+            out.append(f"`$chatter` is {event.chatter}.")
+        out.append("")
+        out += [*_table(event.variables, "event"), ""] if event.variables else ["No fields beyond `type`.", ""]
+    return "\n".join(out).rstrip() + "\n"
