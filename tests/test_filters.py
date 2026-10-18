@@ -10,6 +10,7 @@ import pytest
 from doomtp_bot.filters.matcher import ChannelFilter, FilterEntry, FilterError, compile_entry
 from doomtp_bot.filters.normalize import normalize
 from doomtp_bot.filters.service import FilterService
+from doomtp_bot.filters.slurs import LEVELS, slur_filter
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.runtime.result import Code
 from doomtp_bot.storage.db import Databases
@@ -38,6 +39,8 @@ def censor(entries: list[FilterEntry], text: str) -> str | None:
         ("n1c3", "nice"),  # leetspeak
         ("𝓷𝓲𝓬𝓮", "nice"),  # mathematical alphanumerics
         ("ß", "s"),  # NFKD gives "ss", collapsed to one
+        ("n!ce!", "nice!"),  # a symbol is a letter only inside a word
+        ("$h!t!!", "shit!!"),
     ],
 )
 def test_normalization_folds_the_usual_tricks(raw: str, expected: str) -> None:
@@ -275,3 +278,37 @@ async def test_the_filter_rejects_stored_content(dbs: Databases) -> None:
     assert (await run("!cc add mine echo hi", mod))[0] == Code.OK
     assert (await run("!cc publish mine as bad", mod))[0] == Code.USAGE  # the published name
     assert (await run("!cc publish mine as hello", mod))[0] == Code.OK
+
+
+# ── the built-in slur list (filters/slurs.py) ───────────────────────────────
+@pytest.mark.parametrize("level", [*LEVELS, "off", ""])
+@pytest.mark.parametrize("line", ["you nigger", "you N1GGERS", "f a g g o t", "kike!", "a sand nigger"])
+def test_the_base_slurs_are_caught_at_every_level(level: str, line: str) -> None:
+    assert slur_filter(level).apply(line).changed  # unknown levels get base, never nothing
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["fuck this", "cum on", "shit", "Niger and Nigeria", "a raccoon", "spice", "figure", "Pakistan", "homosapiens"],
+)
+def test_profanity_and_innocent_words_pass_every_level(line: str) -> None:
+    for level in LEVELS:
+        assert slur_filter(level).apply(line).text == line
+
+
+def test_stricter_levels_add_words() -> None:
+    assert slur_filter("base").apply("retard").text == "retard"
+    assert slur_filter("strict").apply("retard").text == "******"
+    assert slur_filter("strict").apply("honky").text == "honky"
+    assert slur_filter("strictest").apply("honky").text == "*****"
+    assert slur_filter("strictest").apply("retard").text == "******"
+
+
+async def test_the_bot_never_says_a_slur_whatever_the_channel_allows(dbs: Databases) -> None:
+    levels = {CHANNEL: "strict"}
+    filters = FilterService(dbs.bot, slur_level=lambda c: levels.get(c, "base"))
+    await filters.reload()
+    await filters.add(channel_id=CHANNEL, pattern="nigger", kind="allow", actor_user_id="1", via="chat")
+    await filters.add(channel_id=CHANNEL, pattern="bad", actor_user_id="1", via="chat")
+    assert filters.apply(CHANNEL, "bad nigger retard") == ("*** ****** ******", ["bad", "nigger", "retard"])
+    assert filters.apply("999", "nigger retard")[0] == "****** retard"

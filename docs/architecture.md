@@ -41,7 +41,7 @@ A multi-channel Twitch chat bot written in Python, self-hosted on a homelab in a
 | F1 | **Log every chat message** into a queryable database. **Never delete log rows.** Deletions, timeouts, bans and clears are recorded as events and flagged on the affected messages. |
 | F2 | **Fill log gaps** caused by crashes, updates or disconnects from a third-party history service (logs.ivr.fi) |
 | F3 | **Command language** with pipes and chain operators (`\|`, `&&`, `\|\|`, grouping, `>`/`>>` variable writes) and sentinel commands (`true`, `false`, `default`, `fail`). A pipe stops on failure, and `\|\|` handles failures. Details are in the language proposal. |
-| F4 | **Commands return three things:** an exit code (0 = success), a formatted message (shown when it's the final result) and structured data (usable by later commands, e.g. `{_1[celsius]}`) |
+| F4 | **Commands return three things:** an exit code (0 = success), a formatted message (shown when it's the final result) and structured data (usable by later commands, e.g. `{_1[key]}` after `random`). Each command's `data_schema` says what its data holds. |
 | F5 | **Permission tiers:** Twitch built-ins (broadcaster, lead mod, mod, VIP, sub), custom roles (e.g. ambassador) at any rank including above moderator, and **global bot owners and bot admins** above everything |
 | F6 | **Cooldowns:** a global cooldown per tier **and** a per-user cooldown. **Both must have expired** for the command to run. Rejections are silent, with an optional **callback** that can customize the response. |
 | F7 | **Toggles** for modules and individual commands, **globally and per channel** |
@@ -299,33 +299,32 @@ class Result:
 
 ### 4.2 Command specification (self-documenting)
 
-The example is a `weather` command because it shows every part of a spec: a fallback to a variable, typed
-data for a pipe, per-tier cooldowns. It is an illustration, not a module the bot ships. *(Changed in
-revision 5: §12 used to plan a `weather` module. It would be the bot's first outside service run on
-behalf of chat, with a key, a rate limit and a location lookup to choose, and nobody has asked for it;
-it stays here as the example. Adding it means an ADR for the source first.)*
+The example is the real `logsearch` command (`modules/logsearch.py`), because it shows most parts of a
+spec: typed data for a pipe, a required role, per-tier cooldowns. *(Changed in revision 5: this used to
+be an imagined `weather` module. `weather` now exists as a derived command in the starter pack, over
+`http get` (ADR-0020).)*
 
 ```python
 @command(
-    name="weather", module="weather", aliases=["w"],
-    summary="Current weather for a location",
-    description="Looks up current conditions. Defaults to your saved {chatter.location}.",
-    params=[                                   # positional, documented as arg.N
-        Param("1+", name="location", type="str", required=False,
-              description="City name; falls back to {chatter.location}"),
-    ],
-    input=InputMode.OPTIONAL,                # can receive piped data
-    data_schema={"celsius": float, "fahrenheit": float, "condition": str, "location": str},
-    examples=[                                 # {sign} = the reader's own command sign
-        Example("{sign}weather Lisbon", "Lisbon: 21°C, clear"),
-        Example('{sign}weather Lisbon | echo "it\'s {_1[celsius]}C now!"', "it's 21C now!"),
-    ],
-    required_role="everyone",
-    default_cooldowns={"everyone": Cooldown(tier_s=10, user_s=30), "moderator": Cooldown(0, 0)},
-    log_level=LogLevel.INVOCATIONS,
-    side_effects=False,                       # True → may only commit if run not cancelled
+    CommandSpec(
+        name="logsearch", module=MODULE,
+        summary="Find something said in this channel's chat",
+        description=f"{USAGE}: the newest message with all the words, and how many more match. ...",
+        params=(                                   # positional, documented as arg.N
+            Param("1+", "words", required=True, max_len=MAX_QUERY_CHARS, description="What to look for"),
+        ),
+        data_schema={"": "{count: int, messages: [{login: str, text: str, sent_at: int}]}"},  # per form
+        examples=(                                 # {sign} = the reader's own command sign
+            Example("{sign}logsearch speedrun", "alice, 3h ago: the speedrun starts at 8 (1 of 4)"),
+            Example('{sign}logsearch speedrun | echo "{_1[count]} found"', "4 found"),
+        ),
+        required_role="moderator",
+        default_cooldowns={"everyone": Cooldown(tier_s=5, user_s=10)},
+        log_level=LogLevel.INVOCATIONS,
+        side_effects=False,                        # True → may only commit if run not cancelled
+    )
 )
-async def weather(ctx: Ctx, args: Args, stdin: Result | None) -> Result: ...
+async def logsearch_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result: ...
 ```
 
 - **Usage strings, `!help`, the `/api/v1/commands` JSON and the public docs page are all generated** from these specs.
@@ -614,7 +613,7 @@ A **race window** remains: a mod can act after the message has already been sent
     web admin's rejoin button, `"rejoin": true` on `POST /api/v1/channels` (409 without it), or the
     broadcaster inviting the bot again themselves (through `/auth/connect`, which `!join` in the bot's chat links to).
   - Never send unsolicited messages in basic-tier channels. Timers and alerts there require an explicit opt-in by a mod.
-- **Per-channel settings:** `prefix`, `reply_hold_ms`, `publish_min_role`, `channel_var_write_role`, `history_backfill` (on for new channels), `log_enabled`, `quiet_errors`, `cc_edit_notice` (off by default) and the callback defaults.
+- **Per-channel settings:** `prefix`, `reply_hold_ms`, `publish_min_role`, `channel_var_write_role`, `history_backfill` (on for new channels), `log_enabled`, `quiet_errors`, `cc_edit_notice` (off by default), `bot_enabled` (on by default; off, the bot logs but never sends a message there), `slur_filter` (`base`, `strict` or `strictest`; `base` always applies, see `filters/slurs.py`) and the callback defaults.
 - **Prefix validation:** a prefix can't start with `/` or `.`, because Twitch clients treat those as chat commands. Its length is 1–3 characters and it can't contain whitespace.
 
 ---
@@ -637,7 +636,7 @@ A **race window** remains: a mod can act after the message has already been sent
 | `/api/v1/channels…` settings, join/part, module and command toggles, filters, triggers, publications, variables and their storage use, message search, command runs, `/api/v1/audit`, the storage limits (`/api/v1/variable-limits`) and the hosts `http get` may fetch (`/api/v1/http-hosts`, `/api/v1/http-limits`) | **Now** | API key (`read`/`write`) or a session, at the rank chat asks for (ADR-0026): a channel's moderators for most of it, its broadcaster for leaving, backfill jobs, logging and the "who may" roles; joining any channel, the storage limits and the hosts for admins. Writes call the same services the chat commands do, so they land in the audit log with `via="api"`. `/api/v1/audit` pages with `before` and filters by `actor` (`me` for one's own changes) and `action`; someone who manages no channel sees only their own. |
 
 **API keys** (`api/keys.py`) are 32 random bytes with a `dtb_` prefix, stored only as a SHA-256 — random keys need no password hashing, since there is nothing to guess. They are created and revoked with an admin session through `/api/v1/keys` (the web admin), and the key is in the response that creates it and nowhere else. Two scopes: `read` and `write`. A session cookie also authenticates, but a cookie-authenticated *write* must carry the session's CSRF token in `X-CSRF-Token`, because browsers send cookies whether or not the page meant to.
-| `GET /api/v1/channels/{login}/log`, `/log/coverage` | **Now** | The channel's moderators, or anyone while its `public_log` and `log_enabled` are on, a limited number of reads a minute per address and without moderation events (ADR-0025, ADR-0026); removed messages are in for them too, flagged, while `/messages` leaves them out. The log as one timeline of messages, notifications and moderation events in time order, a keyset page at a time (`next` → `cursor`), newest first or oldest first, narrowed by window, kind, chatter (old logins too), search or `hide_removed`. Messages carry their moderation flags and the command run that links a command to the bot's reply; v2's `raw=true` adds each entry's row as stored (EventSub's event, the IRC line, or a legacy rebuild). `/coverage` lists the sessions and gaps in a window and the backfill that filled each. The web site's log viewer and the VOD archive's chat replay both read it. |
+| `GET /api/v1/channels/{login}/log`, `/log/coverage` | **Now** | The channel's moderators, or anyone while its `public_log` and `log_enabled` are on, a limited number of reads a minute per address and without moderation events (ADR-0025, ADR-0026); removed messages are in for them too, flagged, while `/messages` leaves them out. The log as one timeline of messages, notifications and moderation events in time order, a keyset page at a time (`next` → `cursor`), newest first or oldest first, narrowed by window, kind, chatter (old logins too), search or `hide_removed`. Messages carry their moderation flags and the command run that links a command to the bot's reply; a notification carries the chatter's own message (`fragments`, `badges`, `color`), as a resub's is shown under its system line; v2's `raw=true` adds each entry's row as stored (EventSub's event, the IRC line, or a legacy rebuild). `/coverage` lists the sessions and gaps in a window and the backfill that filled each. The web site's log viewer and the VOD archive's chat replay both read it. |
 | `/api/v1/session`, `/api/v1/keys` | **Now** | The admin login and API keys as JSON, for a UI served from elsewhere on the same host (ADR-0016). A session has a `role`: the password is an admin; a Twitch sign-in (ADR-0017, `/auth/admin/login`) is an admin for a bot owner or bot admin, a moderator of the channels it lists, or a user who manages none (ADR-0026). `channel_roles` and `channel_ranks` say why and how far it manages each channel, and `own_channel` whether the bot is in the user's own. Its writes are audited as `via="web"` under the user's id. Keys are for admins. The CSRF token comes from `GET /session`, and `twitch_login` there says whether the Twitch sign-in is set up. Keys are managed with a session only, never with a key. Failed logins are limited per client address; behind a proxy, `WEB_FORWARDED_ALLOW_IPS` names the proxies whose forwarded address is believed. |
 | `X-View-As` request header | **Now** | An admin session previews the API as another viewer (ADR-0030): `signed-out`, `user`, `moderator@<channel>`, `broadcaster@<channel>` or `<rank>@<channel>` for a custom role ranked 1-99. Reads, `GET /session` included (it adds `view_as`), are answered as that viewer's own session would get them; every write is refused with 403. Previewing someone signed out, a private read is a 401 that carries `X-View-As: signed-out`. From any other caller the header is refused (403 from a session, 400 with a key). |
 | `GET /api/v1/site`, `/site/channels/{login}`, `/roles`, `/grammar`, `/explain/{token}`, `/packs`, `/channels/{login}/packs` | **Now** | Public, and only what the public pages print: the joined channels, one channel's sign, tier and status, the built-in roles, the grammar, a chat-linked explain report, published packs, each member marked `internal` when only its pack's own commands can call it (ADR-0016) |
@@ -660,7 +659,7 @@ A request carrying `X-Forwarded-For` whose address isn't in it came through a pr
 so its address is the proxy's (on the same host, Docker's private gateway), and it never counts as local.
 
 **UI technology (ADR-0016):**
-- **The pages are a separate site,** [`doomtp-web`](https://github.com/vEXOULZ/doomtp-web): Vue and TypeScript on the design the other vexoulz sites share, built to static files. The bot serves no pages of its own. The site is served from the same origin as the bot, with a reverse proxy sending `/api/*`, `/auth/*`, `/static/*`, `/healthz`, `/readyz`, and exactly `/docs` and `/openapi.json` to the bot and everything else to the site. So there is no CORS, and the session is a plain same-origin cookie. The site keeps the URLs the bot's own pages had, so chat's explain links and older bookmarks still work.
+- **The pages are a separate site,** [`doomtp-web`](https://github.com/vexouLuna/doomtp-web): Vue and TypeScript on the design the other vexoul.net sites share, built to static files. The bot serves no pages of its own. The site is served from the same origin as the bot, with a reverse proxy sending `/api/*`, `/auth/*`, `/static/*`, `/healthz`, `/readyz`, and exactly `/docs` and `/openapi.json` to the bot and everything else to the site. So there is no CORS, and the session is a plain same-origin cookie. The site keeps the URLs the bot's own pages had, so chat's explain links and older bookmarks still work.
 - **What the site needs from the bot is JSON.** When a page needs something the API doesn't return, it is added to the API here; the site doesn't work it out on its own.
 - **The expression editor** is the one exception (ADR-0011). It's a **CodeMirror 6** component whose own lexer (`web-editor/src/tokens.js`) only colours text; diagnostics come from `/api/v1/parse`, autocomplete from `/api/v1/language` and `/api/v1/commands`, and the preview from `/api/v1/explain`.
   - It ships as a static bundle (esbuild), **committed** at `api/static/editor/editor.js`: the image has no Node in it, and the bot serves the file as it stands. Rebuild and commit together.
@@ -692,8 +691,8 @@ token stays with the session, in memory, and nothing is written to the database.
 worked out again at most every five minutes, on the next request (`current_session` in
 `api/access.py`): channels the user lost go at once, and a user Twitch no longer vouches for is signed out,
 and one who manages nothing any more becomes a user. A request to Twitch that merely failed keeps what the session
-had until the next try. With `SIGNIN_PROVIDER=vex` (ADR-0023), `VexoulzSignIn` sends the person to
-vexoulz-auth instead, gets the user and a session id for the code, and asks vexoulz-auth for the moderated
+had until the next try. With `SIGNIN_PROVIDER=vex` (ADR-0023), `VexSignIn` sends the person to
+vex-auth instead, gets the user and a session id for the code, and asks vex-auth for the moderated
 channels; the refresh also checks that session, so signing out everywhere reaches the bot too. *(Revision 5 dropped a pluggable `Authenticator` written ahead of time; the caller it
 would have guessed at is now designed, and the seam came with it.)*
 

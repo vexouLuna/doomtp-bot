@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -276,7 +276,7 @@ wheels = [
 
 [[package]]
 name = "doomtp-bot"
-version = "0.15.1"
+version = "0.18.0"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
@@ -317,7 +317,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.16.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.4.0" },
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "railroad-diagrams", marker = "extra == 'dev'", specifier = ">=3" },
     { name = "regex", specifier = ">=2024.11.6" },
@@ -328,7 +328,7 @@ requires-dist = [
     { name = "types-regex", marker = "extra == 'dev'" },
     { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2024.1" },
     { name = "uvicorn", specifier = ">=0.30" },
-    { name = "vex-platform", url = "https://github.com/vEXOULZ/vex-platform/archive/refs/tags/v0.6.0.tar.gz" },
+    { name = "vex-platform", url = "https://github.com/vexouLuna/vex-platform/archive/refs/tags/v0.6.0.tar.gz" },
 ]
 provides-extras = ["dev"]
 
@@ -1473,7 +1473,7 @@ wheels = [
 [[package]]
 name = "vex-platform"
 version = "0.6.0"
-source = { url = "https://github.com/vEXOULZ/vex-platform/archive/refs/tags/v0.6.0.tar.gz" }
+source = { url = "https://github.com/vexouLuna/vex-platform/archive/refs/tags/v0.6.0.tar.gz" }
 dependencies = [
     { name = "fastapi" },
     { name = "procrastinate" },
