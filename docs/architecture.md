@@ -299,34 +299,32 @@ class Result:
 
 ### 4.2 Command specification (self-documenting)
 
-The example is a `weather` command because it shows every part of a spec: a fallback to a variable, typed
-data for a pipe, per-tier cooldowns. It is an illustration, not a module the bot ships. *(Changed in
-revision 5: §12 used to plan a `weather` module. It would be the bot's first outside service run on
-behalf of chat, with a key, a rate limit and a location lookup to choose, and nobody has asked for it;
-it stays here as the example. Adding it means an ADR for the source first.)*
+The example is the real `logsearch` command (`modules/logsearch.py`), because it shows most parts of a
+spec: typed data for a pipe, a required role, per-tier cooldowns. *(Changed in revision 5: this used to
+be an imagined `weather` module. `weather` now exists as a derived command in the starter pack, over
+`http get` (ADR-0020).)*
 
 ```python
 @command(
-    name="weather", module="weather", aliases=["w"],
-    summary="Current weather for a location",
-    description="Looks up current conditions. Defaults to your saved {chatter.location}.",
-    params=[                                   # positional, documented as arg.N
-        Param("1+", name="location", type="str", required=False,
-              description="City name; falls back to {chatter.location}"),
-    ],
-    input=InputMode.OPTIONAL,                # can receive piped data
-    data_schema={"": "{celsius: float, fahrenheit: float, condition: str, location: str}"},  # per form
-
-    examples=[                                 # {sign} = the reader's own command sign
-        Example("{sign}weather Lisbon", "Lisbon: 21°C, clear"),
-        Example('{sign}weather Lisbon | echo "it\'s {_1[celsius]}C now!"', "it's 21C now!"),
-    ],
-    required_role="everyone",
-    default_cooldowns={"everyone": Cooldown(tier_s=10, user_s=30), "moderator": Cooldown(0, 0)},
-    log_level=LogLevel.INVOCATIONS,
-    side_effects=False,                       # True → may only commit if run not cancelled
+    CommandSpec(
+        name="logsearch", module=MODULE,
+        summary="Find something said in this channel's chat",
+        description=f"{USAGE}: the newest message with all the words, and how many more match. ...",
+        params=(                                   # positional, documented as arg.N
+            Param("1+", "words", required=True, max_len=MAX_QUERY_CHARS, description="What to look for"),
+        ),
+        data_schema={"": "{count: int, messages: [{login: str, text: str, sent_at: int}]}"},  # per form
+        examples=(                                 # {sign} = the reader's own command sign
+            Example("{sign}logsearch speedrun", "alice, 3h ago: the speedrun starts at 8 (1 of 4)"),
+            Example('{sign}logsearch speedrun | echo "{_1[count]} found"', "4 found"),
+        ),
+        required_role="moderator",
+        default_cooldowns={"everyone": Cooldown(tier_s=5, user_s=10)},
+        log_level=LogLevel.INVOCATIONS,
+        side_effects=False,                        # True → may only commit if run not cancelled
+    )
 )
-async def weather(ctx: Ctx, args: Args, stdin: Result | None) -> Result: ...
+async def logsearch_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result: ...
 ```
 
 - **Usage strings, `!help`, the `/api/v1/commands` JSON and the public docs page are all generated** from these specs.
