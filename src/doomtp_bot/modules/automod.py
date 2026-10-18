@@ -41,6 +41,7 @@ def _describe(action: str, seconds: int) -> str:
 @command(
     CommandSpec(
         name="automod",
+        data_schema={"": "{action: str, seconds: int}", "test": "{blocked: bool}"},
         module=MODULE,
         toggleable=False,
         summary="Delete incoming chat the word list would block",

@@ -128,6 +128,13 @@ def _store(ctx: CommandContext) -> PostgresVariableStore:
 @command(
     CommandSpec(
         name="var",
+        data_schema={
+            "get, set, incr, push, pop": "any: the value",
+            "list": "{name: value}",
+            "top": "[{rank: int, user: str, value: any}]",
+            "usage": "{owner: str, used: int, quota: int, namespaces: {name: int}}",
+            "del": "none",
+        },
         module=MODULE,
         summary="Read and change variables",
         description=USAGE,

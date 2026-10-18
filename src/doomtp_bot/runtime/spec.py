@@ -95,7 +95,10 @@ class CommandSpec:
     aliases: tuple[str, ...] = ()
     params: tuple[Param, ...] = ()
     input: InputMode = InputMode.NONE
+    # What `{_N}` holds after this command, per form: "" for the plain form, else the subcommand or the
+    # kind of argument ("list", "a range"), mapped to its type, e.g. "{id: int, name: str}" or "none".
     data_schema: dict[str, str] = field(default_factory=dict)
+
     examples: tuple[Example, ...] = ()
     required_role: str = "everyone"
     # A pack member's rank (ADR-0033): a channel's rule can raise what it requires, never lower it.

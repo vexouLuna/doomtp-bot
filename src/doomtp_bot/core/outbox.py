@@ -1,6 +1,7 @@
 """Outbox: the only path to Twitch chat (architecture §2, §8; ADR-0001).
 
-Per channel: optional reply hold → moderation recheck → filter hook → link rule → chunking → token bucket → send → log.
+Per channel: bot on/off → optional reply hold → moderation recheck → filter hook → link rule → chunking → token
+bucket → send → log. A channel with the bot switched off gets nothing, whoever asked: the drop is logged.
 """
 
 from __future__ import annotations
@@ -26,6 +27,8 @@ DUPLICATE_SUFFIX = " \U000e0000"
 # Twitch answered the send with 403: the bot may not talk in that channel, which means it was banned
 # there. The sender reports it with this reason, and the outbox hands the channel to `on_banned`.
 BANNED = "banned"
+# The channel switched the bot off (`bot_enabled`): it logs there but never speaks.
+BOT_OFF = "bot_off"
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +120,7 @@ class Outbox:
         hold_ms_for: Callable[[str], int] = lambda channel_id: 0,
         content_filter: FilterFn = passthrough_filter,
         links_allowed_for: Callable[[str], bool] = lambda channel_id: True,
+        enabled_for: Callable[[str], bool] = lambda channel_id: True,
         ttl_s: float = DEFAULT_TTL_S,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
@@ -129,6 +133,7 @@ class Outbox:
         self.hold_ms_for = hold_ms_for
         self.content_filter = content_filter
         self.links_allowed_for = links_allowed_for
+        self.enabled_for = enabled_for
         self.ttl_s = ttl_s
         self.clock = clock
         self.sleep = sleep
@@ -153,6 +158,9 @@ class Outbox:
         is_invalidated: Callable[[], bool] = lambda: False,
         run_ref: str | None = None,
     ) -> list[SendResult]:
+        if not self.enabled_for(channel_id):
+            await self._drop(channel_id, text, BOT_OFF, [], run_ref)
+            return [SendResult(None, BOT_OFF)]
         created = self.clock()
         hold = self.hold_ms_for(channel_id)
         if hold > 0:
@@ -180,6 +188,11 @@ class Outbox:
                     await self._drop(channel_id, text, "moderated", hits, run_ref)
                     results.append(SendResult(None, "moderated"))
                     return results
+                if not self.enabled_for(channel_id):  # switched off while this waited for the bucket
+                    await self._drop(channel_id, text, BOT_OFF, hits, run_ref)
+                    results.append(SendResult(None, BOT_OFF))
+                    return results
+
                 if self._last_text.get(channel_id) == part:
                     part += DUPLICATE_SUFFIX
                 bucket.take()

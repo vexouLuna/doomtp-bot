@@ -25,6 +25,7 @@ def _spec(**kwargs: object) -> CommandSpec:
 @command(
     _spec(
         name="true",
+        data_schema={"": "the data of the result before it, unchanged"},
         summary="Always succeeds",
         description="Succeeds without a message and passes the previous data through. `{sign}x || true` makes x optional.",
         examples=(Example("{sign}shoutout @someone || true", "(nothing if the shoutout fails)"),),
@@ -40,6 +41,7 @@ async def true_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
 @command(
     _spec(
         name="fail",
+        data_schema={"": "none"},
         summary="Fail with a code and message",
         params=(Param("1+", "message", description="Optional exit code (1–99) followed by a message"),),
         examples=(Example("{sign}check {arg.1:int ?? 0} <= 20 || fail 2 max 20 dice", "max 20 dice"),),
@@ -57,6 +59,7 @@ async def fail_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
 @command(
     _spec(
         name="echo",
+        data_schema={"": "str: the text"},
         summary="Say something",
         params=(Param("1+", "text", description="Text to say"),),
         examples=(Example("{sign}random 1-100 | echo you rolled {_1}", "you rolled 42"),),
@@ -74,6 +77,7 @@ def _said(value: Any) -> Result:
 @command(
     _spec(
         name="check",
+        data_schema={"": "any: the value of the expression"},
         summary="Test a condition",
         description=(
             "Succeeds if the expression is true, fails with code 1 if it is false. The data is its value. "
@@ -91,6 +95,7 @@ async def check_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Re
 @command(
     _spec(
         name="calc",
+        data_schema={"": "any: the value of the expression"},
         summary="Work out an expression",
         description="Says the value of an expression. A line like `{sign}1 + 3` runs calc.",
         params=(Param("1+", "value", required=True, description="An expression, e.g. (2 + 3) * 4"),),
@@ -129,7 +134,14 @@ def _operator(name: str, symbol: str, sample: tuple[str, ...] = ("7", "2")) -> C
         return _said(_apply(symbol, args.values))
 
     handler.__name__ = f"{name}_cmd"
-    spec = _spec(name=name, summary=f"The operator {symbol} as a command", params=params, examples=(example,))
+    spec = _spec(
+        name=name,
+        summary=f"The operator {symbol} as a command",
+        params=params,
+        examples=(example,),
+        data_schema={"": "any: the value"},
+    )
+
     return command(spec)(handler)
 
 
