@@ -92,6 +92,9 @@ class NotificationEntry(_Model):
     user: UserRef | None
     type: str
     payload: dict[str, Any] = Field(description="Depends on `type`; a follow's `followed_at` is ISO 8601 too")
+    fragments: list[dict[str, Any]] = Field(description="The user's own message, as a message's fragments")
+    badges: list[dict[str, Any]]
+    color: str | None
     source: str
     raw: RawRow | None = Field(None, description="Only with `raw=true`")
 
