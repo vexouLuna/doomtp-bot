@@ -24,6 +24,8 @@ class ChannelSettings:
     prefix: str = DEFAULT_PREFIX
     reply_hold_ms: int = 0
     log_enabled: bool = True
+    bot_enabled: bool = True  # off: logs only, never speaks or runs anything (outbox, dispatcher)
+    slur_filter: str = "base"  # base | strict | strictest; base always applies (filters/slurs.py)
     history_backfill: bool = True  # on for new channels (ADR-0008, amended 2026-09-30)
     public_log: bool = True  # anyone may read the log while log_enabled is on too (ADR-0026)
     quiet_errors: bool = False
@@ -112,6 +114,8 @@ async def load_snapshot(conn: Connection) -> PolicySnapshot:
                 prefix=r["prefix"],
                 reply_hold_ms=r["reply_hold_ms"],
                 log_enabled=r["log_enabled"],
+                bot_enabled=r["bot_enabled"],
+                slur_filter=r["slur_filter"],
                 history_backfill=r["history_backfill"],
                 public_log=r["public_log"],
                 quiet_errors=r["quiet_errors"],

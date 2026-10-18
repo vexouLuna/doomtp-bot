@@ -622,24 +622,78 @@ async def _customecho(ctx: CommandContext, v: list[str], args: Args) -> Result:
     return Result.success(f"{name} now says: {template}", template)
 
 
-def _make(name: str, summary: str, usage: str, fn: Any, required_role: str = "moderator") -> Command:
+def _make(
+    name: str, summary: str, usage: str, fn: Any, data: dict[str, str], required_role: str = "moderator"
+) -> Command:
     example = Example(DEFAULT_PREFIX + usage.split(" |")[0], "")
-    return command(_spec(name, summary, usage, required_role, examples=(example,)))(fn)
+    return command(_spec(name, summary, usage, required_role, examples=(example,), data_schema=data))(fn)
+
+
+NONE = {"": "none"}
 
 
 COMMANDS: tuple[Command, ...] = (
-    _make("role", "Manage custom roles", ROLE_USAGE, _role),
-    _make("perm", "Change who can use a command", PERM_USAGE, _perm),
-    _make("cooldown", "Change command cooldowns per role", COOLDOWN_USAGE, _cooldown),
-    _make("module", "Turn command groups on or off", MODULE_USAGE, _module),
-    _make("cmd", "Turn a command on or off, or set its log level", CMD_USAGE, _cmd),
+    _make(
+        "role",
+        "Manage custom roles",
+        ROLE_USAGE,
+        _role,
+        {"list": "[{name: str, rank: int}]", "who": "[str]: user ids", "other forms": "none"},
+    ),
+    _make(
+        "perm",
+        "Change who can use a command",
+        PERM_USAGE,
+        _perm,
+        {"show": "{required_role: str, allowed_roles: [str]}", "other forms": "none"},
+    ),
+    _make(
+        "cooldown",
+        "Change command cooldowns per role",
+        COOLDOWN_USAGE,
+        _cooldown,
+        {"show": "{role: [shared_s: int, personal_s: int]}", "other forms": "none"},
+    ),
+    _make(
+        "module",
+        "Turn command groups on or off",
+        MODULE_USAGE,
+        _module,
+        {"list": "{module: bool}", "other forms": "none"},
+    ),
+    _make("cmd", "Turn a command on or off, or set its log level", CMD_USAGE, _cmd, NONE),
     # `ignore me` is for everyone, so the command is; the handler keeps the rest for moderators.
-    _make("ignore", "Ignore a user's commands, or yourself", IGNORE_USAGE, _ignore, required_role="everyone"),
-    _make("unignore", "Stop ignoring yourself", UNIGNORE_USAGE, _unignore, required_role="everyone"),
-    _make("prefix", "Show or change the command prefix", "prefix [new prefix]", _prefix),
-    _make("admin", "Manage global bot admins", ADMIN_USAGE, _admin, required_role="bot_owner"),
+    _make(
+        "ignore",
+        "Ignore a user's commands, or yourself",
+        IGNORE_USAGE,
+        _ignore,
+        {"list": "[str]: user ids", "other forms": "none"},
+        required_role="everyone",
+    ),
+    _make("unignore", "Stop ignoring yourself", UNIGNORE_USAGE, _unignore, NONE, required_role="everyone"),
+    _make(
+        "prefix",
+        "Show or change the command prefix",
+        "prefix [new prefix]",
+        _prefix,
+        {"": "str: the prefix", "a new prefix": "none"},
+    ),
+    _make(
+        "admin",
+        "Manage global bot admins",
+        ADMIN_USAGE,
+        _admin,
+        {
+            "a limit": "int: the size",
+            "http list": "{hosts: [map], limits: {channel_per_minute: int, host_per_minute: int}}",
+            "http limit": "{channel_per_minute: int, host_per_minute: int}",
+            "other forms": "none",
+        },
+        required_role="bot_owner",
+    ),
     command(
-        _spec("callback", "Customize replies for cooldowns and denials", CALLBACK_USAGE),
+        _spec("callback", "Customize replies for cooldowns and denials", CALLBACK_USAGE, data_schema=NONE),
         raw_tail_subcommands=(("set", 4),),
     )(_callback),
     command(
@@ -648,6 +702,7 @@ COMMANDS: tuple[Command, ...] = (
             "Change what a readout command says",
             CUSTOMECHO_USAGE,
             writes=("channel.customecho",),
+            data_schema={"show, set": "str: the wording", "clear": "none"},
             examples=(
                 Example(
                     DEFAULT_PREFIX + "customecho set uptime {$channel.display} has been streaming {$channel.uptime}",

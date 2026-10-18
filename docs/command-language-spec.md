@@ -161,7 +161,7 @@ ident       = ( letter | "_" ) , { letter | digit | "_" } ;
 - **Dots and brackets.** `.` walks only names the bot defines: a namespace, a variable's name, a `$` field, a result's `code`/`message`/`data`, an argument, and the fields of `event`, `match`, `cooldown`, `denied`, `run` and `cmd`. `[ ]` walks into **values**, so a map key never collides with a name the bot defines. `{channel.stats.kills}` is `E_BAD_PLACEHOLDER` with the hint `read inside a value with [ ]: {channel.stats[kills]}`.
 - **Bracket keys.** A bare word followed by `]` is a literal key: `[kills]`. Anything else is an expression: `["best run"]`, `[0]`, `[-1]`, `[arg.1]`, `[$now.date]`, `[_1]`, `[arg.1 + 1]`. `_` and `_N` are always result references, never literal keys.
 - **`$` fields** take exactly one field: `{$chatter.display}`, `{$now.date}`. The fields are listed in namespaces.md. `{$chatter}` or `{$chatter.a.b}` is `E_BAD_PLACEHOLDER`.
-- **Results.** `_` is the previous result and `_N` the result of invocation N (§6.4). A result has only `.code`, `.message` and `.data`: `{_1.celsius}` is `E_BAD_PLACEHOLDER`, and the data is read with brackets, `{_1[celsius]}`.
+- **Results.** `_` is the previous result and `_N` the result of invocation N (§6.4). A result has only `.code`, `.message` and `.data`: `{_1.user}` is `E_BAD_PLACEHOLDER`, and the data is read with brackets, `{_1[user]}`.
 - **Arguments.** `{arg.2+}` is arguments 2 onward only where the `+` is followed by `}`, `:`, `]`, WS or the end. Otherwise `+` is addition: `{arg.1+1}` is `arg.1 + 1`. An argument is read into with brackets: `{arg.1[name]}`.
 - **Strings** are literal. `"…"` inside an expression holds no placeholders, and `\` makes the next character literal.
 - **Numbers.** An integer has at most `MAX_INT_DIGITS (18)` digits, and a float literal must be finite. Otherwise `E_EXPR_SYNTAX`.
@@ -480,7 +480,8 @@ Each block leaves gaps for related errors, and the rest of 100–1023 is free fo
   - For the first evaluated invocation of a Line, Trigger, Listener or Callback scope, `_` is missing.
   - For the first evaluated invocation of a Body scope, `_` is the custom command's stdin if it has one, otherwise missing.
   - After an operator, `_` is the left operand's Result (per §6.3).
-- **Reading a result.** `{_N}` alone renders the data if it is a scalar, otherwise the message. `.code`, `.message` and `.data` select one part. In an expression, `[ ]` and `:` work on the data, whatever it is: `{_1[celsius]}`, `{_1:len}`, `{_1[tags][-1]}`, and `_1 + 1` adds to the data.
+- **Reading a result.** `{_N}` alone renders the data if it is a scalar, otherwise the message. `.code`, `.message` and `.data` select one part. In an expression, `[ ]` and `:` work on the data, whatever it is: `{_1[user]}`,
+ `{_1:len}`, `{_1[tags][-1]}`, and `_1 + 1` adds to the data.
 - A bare number is always a number: `{1}` renders `1`, and `{1 + 1}` renders `2`. For one release a typed line refuses `{1}` and `{1.x}` alone with the hint `a result is {_1} now`, so a 1.0 habit fails loudly instead of printing a number (§6.4, A.2 #25).
 - **A custom command invocation's Result** is the Result of its body expression.
 
@@ -642,7 +643,7 @@ A reference is **missing** when:
 - Substitutions are numbered −1, −2, … and don't take a `_N` index.
 - If it fails, the enclosing invocation fails with the same Result, so `{!fail 4 bad}` fails with code 4 and `{!nosuch}` with 127.
 - Substitutions nest (`{!echo {!random 1-6}}`) at most `MAX_SUBST_DEPTH (3)` deep. Deeper nesting fails with 236 (`E_SUBST_DEPTH`) when it runs.
-- A `??` applies to a missing value, never to a failure: `{ {!weather x} ?? unknown }` covers weather succeeding with no data, not weather failing.
+- A `??` applies to a missing value, never to a failure: `{ {!logsearch x} ?? unknown }` covers logsearch succeeding with no data, not logsearch failing.
 
 ### 7.8 Expression evaluation
 
@@ -680,7 +681,7 @@ They can't be disabled or shadowed, have no cooldowns, require role `everyone`, 
 
 Idioms:
 - **Optional command:** `!shoutout {arg.1} || true`
-- **Fallback value:** `( !weather {arg.1+} || default unknown ) -> chatter.last_weather`
+- **Fallback value:** `( !logsearch {arg.1+} || default unknown ) -> chatter.last_search`
 - **Validation:** `check {arg.1:int} <= 20 || fail 2 max 20 dice`
 
 ### 8.1 Expression commands
@@ -810,11 +811,11 @@ The parser golden-test corpus MUST include at least the following cases. `⟨…
 
 | # | Expression | Scenario | Final Result / sent |
 |---|------------|----------|---------------------|
-| 1 | `!weather Lisbon \| echo "it's {_1[celsius]}C"` | weather OK, `data.celsius = 21.5` | `0` / `it's 21.5C` |
-| 2 | `!weather Nowhere \| echo "{_1[celsius]}"` | weather returns code 3 with "location not found" | `3` / `location not found` (the pipe stopped) |
-| 3 | `!weather Nowhere \|\| echo "failed: {_.message}"` | as above | `0` / `failed: location not found` |
-| 4 | `( !weather x \|\| default ? ) -> chatter.w` | weather fails | `0` / `?`; `chatter.w = "?"` |
-| 5 | `!weather x -> chatter.w` | weather fails | `3` / weather's message; **nothing stored** |
+| 1 | `!logsearch speedrun \| echo "{_1[count]} found"` | logsearch OK, `data.count = 4` | `0` / `4 found` |
+| 2 | `!logsearch zzz \| echo "{_1[count]}"` | logsearch returns code 3 with "nothing in the log says that" | `3` / `nothing in the log says that` (the pipe stopped) |
+| 3 | `!logsearch zzz \|\| echo "failed: {_.message}"` | as above | `0` / `failed: nothing in the log says that` |
+| 4 | `( !logsearch zzz \|\| default ? ) -> chatter.w` | logsearch fails | `0` / `?`; `chatter.w = "?"` |
+| 5 | `!logsearch zzz -> chatter.w` | logsearch fails | `3` / logsearch's message; **nothing stored** |
 | 6 | `!a \|\| !b && echo {_2}` | `a` succeeds | `_2` is missing → code 230 `E_MISSING_VALUE` unless `??` is used |
 | 7 | `!shoutout @x \|\| true` | shoutout fails | `0` / nothing sent (`true` has no message) |
 | 8 | `!foo` (unknown) | — | `127` / nothing sent |
