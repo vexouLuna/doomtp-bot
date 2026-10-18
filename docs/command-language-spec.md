@@ -643,7 +643,7 @@ A reference is **missing** when:
 - Substitutions are numbered −1, −2, … and don't take a `_N` index.
 - If it fails, the enclosing invocation fails with the same Result, so `{!fail 4 bad}` fails with code 4 and `{!nosuch}` with 127.
 - Substitutions nest (`{!echo {!random 1-6}}`) at most `MAX_SUBST_DEPTH (3)` deep. Deeper nesting fails with 236 (`E_SUBST_DEPTH`) when it runs.
-- A `??` applies to a missing value, never to a failure: `{ {!weather x} ?? unknown }` covers weather succeeding with no data, not weather failing.
+- A `??` applies to a missing value, never to a failure: `{ {!logsearch x} ?? unknown }` covers logsearch succeeding with no data, not logsearch failing.
 
 ### 7.8 Expression evaluation
 
@@ -681,7 +681,7 @@ They can't be disabled or shadowed, have no cooldowns, require role `everyone`, 
 
 Idioms:
 - **Optional command:** `!shoutout {arg.1} || true`
-- **Fallback value:** `( !weather {arg.1+} || default unknown ) -> chatter.last_weather`
+- **Fallback value:** `( !logsearch {arg.1+} || default unknown ) -> chatter.last_search`
 - **Validation:** `check {arg.1:int} <= 20 || fail 2 max 20 dice`
 
 ### 8.1 Expression commands
@@ -811,11 +811,11 @@ The parser golden-test corpus MUST include at least the following cases. `⟨…
 
 | # | Expression | Scenario | Final Result / sent |
 |---|------------|----------|---------------------|
-| 1 | `!weather Lisbon \| echo "it's {_1[celsius]}C"` | weather OK, `data.celsius = 21.5` | `0` / `it's 21.5C` |
-| 2 | `!weather Nowhere \| echo "{_1[celsius]}"` | weather returns code 3 with "location not found" | `3` / `location not found` (the pipe stopped) |
-| 3 | `!weather Nowhere \|\| echo "failed: {_.message}"` | as above | `0` / `failed: location not found` |
-| 4 | `( !weather x \|\| default ? ) -> chatter.w` | weather fails | `0` / `?`; `chatter.w = "?"` |
-| 5 | `!weather x -> chatter.w` | weather fails | `3` / weather's message; **nothing stored** |
+| 1 | `!logsearch speedrun \| echo "{_1[count]} found"` | logsearch OK, `data.count = 4` | `0` / `4 found` |
+| 2 | `!logsearch zzz \| echo "{_1[count]}"` | logsearch returns code 3 with "nothing in the log says that" | `3` / `nothing in the log says that` (the pipe stopped) |
+| 3 | `!logsearch zzz \|\| echo "failed: {_.message}"` | as above | `0` / `failed: nothing in the log says that` |
+| 4 | `( !logsearch zzz \|\| default ? ) -> chatter.w` | logsearch fails | `0` / `?`; `chatter.w = "?"` |
+| 5 | `!logsearch zzz -> chatter.w` | logsearch fails | `3` / logsearch's message; **nothing stored** |
 | 6 | `!a \|\| !b && echo {_2}` | `a` succeeds | `_2` is missing → code 230 `E_MISSING_VALUE` unless `??` is used |
 | 7 | `!shoutout @x \|\| true` | shoutout fails | `0` / nothing sent (`true` has no message) |
 | 8 | `!foo` (unknown) | — | `127` / nothing sent |
