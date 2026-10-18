@@ -41,7 +41,7 @@ A multi-channel Twitch chat bot written in Python, self-hosted on a homelab in a
 | F1 | **Log every chat message** into a queryable database. **Never delete log rows.** Deletions, timeouts, bans and clears are recorded as events and flagged on the affected messages. |
 | F2 | **Fill log gaps** caused by crashes, updates or disconnects from a third-party history service (logs.ivr.fi) |
 | F3 | **Command language** with pipes and chain operators (`\|`, `&&`, `\|\|`, grouping, `>`/`>>` variable writes) and sentinel commands (`true`, `false`, `default`, `fail`). A pipe stops on failure, and `\|\|` handles failures. Details are in the language proposal. |
-| F4 | **Commands return three things:** an exit code (0 = success), a formatted message (shown when it's the final result) and structured data (usable by later commands, e.g. `{_1[celsius]}`) |
+| F4 | **Commands return three things:** an exit code (0 = success), a formatted message (shown when it's the final result) and structured data (usable by later commands, e.g. `{_1[key]}` after `random`). Each command's `data_schema` says what its data holds. |
 | F5 | **Permission tiers:** Twitch built-ins (broadcaster, lead mod, mod, VIP, sub), custom roles (e.g. ambassador) at any rank including above moderator, and **global bot owners and bot admins** above everything |
 | F6 | **Cooldowns:** a global cooldown per tier **and** a per-user cooldown. **Both must have expired** for the command to run. Rejections are silent, with an optional **callback** that can customize the response. |
 | F7 | **Toggles** for modules and individual commands, **globally and per channel** |
@@ -315,7 +315,8 @@ it stays here as the example. Adding it means an ADR for the source first.)*
               description="City name; falls back to {chatter.location}"),
     ],
     input=InputMode.OPTIONAL,                # can receive piped data
-    data_schema={"celsius": float, "fahrenheit": float, "condition": str, "location": str},
+    data_schema={"": "{celsius: float, fahrenheit: float, condition: str, location: str}"},  # per form
+
     examples=[                                 # {sign} = the reader's own command sign
         Example("{sign}weather Lisbon", "Lisbon: 21°C, clear"),
         Example('{sign}weather Lisbon | echo "it\'s {_1[celsius]}C now!"', "it's 21C now!"),
@@ -614,7 +615,7 @@ A **race window** remains: a mod can act after the message has already been sent
     web admin's rejoin button, `"rejoin": true` on `POST /api/v1/channels` (409 without it), or the
     broadcaster inviting the bot again themselves (through `/auth/connect`, which `!join` in the bot's chat links to).
   - Never send unsolicited messages in basic-tier channels. Timers and alerts there require an explicit opt-in by a mod.
-- **Per-channel settings:** `prefix`, `reply_hold_ms`, `publish_min_role`, `channel_var_write_role`, `history_backfill` (on for new channels), `log_enabled`, `quiet_errors`, `cc_edit_notice` (off by default) and the callback defaults.
+- **Per-channel settings:** `prefix`, `reply_hold_ms`, `publish_min_role`, `channel_var_write_role`, `history_backfill` (on for new channels), `log_enabled`, `quiet_errors`, `cc_edit_notice` (off by default), `bot_enabled` (on by default; off, the bot logs but never sends a message there), `slur_filter` (`base`, `strict` or `strictest`; `base` always applies, see `filters/slurs.py`) and the callback defaults.
 - **Prefix validation:** a prefix can't start with `/` or `.`, because Twitch clients treat those as chat commands. Its length is 1–3 characters and it can't contain whitespace.
 
 ---

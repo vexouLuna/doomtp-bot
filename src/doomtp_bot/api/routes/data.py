@@ -88,7 +88,7 @@ MAX_ROWS = 500
 SETTABLE = (
     "prefix", "quiet_errors", "cc_edit_notice", "log_enabled", "history_backfill", "public_log", "reply_hold_ms",
     "timezone", "automod_action", "automod_timeout_s", "channel_var_write_role", "grant_min_role",
-    "publish_min_role", "create_min_role", "var_admin_role",
+    "publish_min_role", "create_min_role", "var_admin_role", "bot_enabled", "slur_filter",
 )  # fmt: skip
 
 
@@ -126,6 +126,8 @@ def _channel_json(settings: ChannelSettings) -> dict[str, Any]:
         "capabilities": sorted(settings.capabilities),
         "prefix": settings.prefix,
         "timezone": settings.timezone,
+        "bot_enabled": settings.bot_enabled,
+        "slur_filter": settings.slur_filter,
         "log_enabled": settings.log_enabled,
         "history_backfill": settings.history_backfill,
         "public_log": settings.public_log,
@@ -147,6 +149,9 @@ class ChannelPatch(BaseModel):
     prefix: str | None = Field(default=None, max_length=16)
     quiet_errors: bool | None = None
     cc_edit_notice: bool | None = None
+    bot_enabled: bool | None = None
+    # No value turns the base list off: the lowest level is `base` (filters/slurs.py).
+    slur_filter: Literal["base", "strict", "strictest"] | None = None
     log_enabled: bool | None = None
     history_backfill: bool | None = None
     public_log: bool | None = None

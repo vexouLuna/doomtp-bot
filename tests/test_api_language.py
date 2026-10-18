@@ -100,7 +100,14 @@ async def test_language_describes_the_syntax_for_the_editor(client: httpx.AsyncC
     assert body["limits"]["MAX_INVOCATIONS"] == 16
     assert body["raw_tail_commands"]["explain"] == 1 and body["raw_tail_commands"]["cc add"] == 3
     events = {e["type"]: e for e in body["events"]}
-    assert events["raid"]["variables"][1] == {"name": "viewers", "meaning": "how many came with the raid"}
+    viewers = {"name": "viewers", "type": "int", "description": "how many came with the raid", "example": "42"}
+    assert events["raid"]["variables"][-1] == {**viewers, "meaning": viewers["description"]}
+    assert body["root_docs"]["$bot"]["fields"][0] == {
+        "name": "name",
+        "type": "str",
+        "description": "the bot's name",
+        "example": "doomtp-bot",
+    }
     assert body["bot_field_docs"]["bot"]["uptime"] and body["bot_root_docs"]["chatter"]
 
 

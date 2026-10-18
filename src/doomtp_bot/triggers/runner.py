@@ -84,6 +84,9 @@ class TriggerRunner:
     ) -> RunReport | None:
         """Run one trigger and send whatever it produced. Returns the report, or None if it didn't parse or
         is still cooling down."""
+        settings = self.policy.channel_settings(trigger.channel_id)
+        if settings is not None and not settings.bot_enabled:
+            return None  # switched off: timers and events don't run either (the outbox refuses to speak too)
         user_id = user[0] if user is not None else None
         if self.cooling(trigger, user_id):
             log.info("trigger.cooldown", trigger=trigger.id, type=trigger.type, channel=trigger.channel_id)

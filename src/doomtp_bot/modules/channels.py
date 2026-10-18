@@ -21,6 +21,7 @@ MODULE = "core_admin"
 @command(
     CommandSpec(
         name="join",
+        data_schema={"": "{channel_id: str, login: str}", "link": "{connect_url: str}", "already joined": "none"},
         module=MODULE,
         toggleable=False,
         summary="Invite the bot to your channel",
@@ -101,6 +102,7 @@ def _connect_link(ctx: CommandContext, bot_id: str, bot_login: str) -> Result:
 @command(
     CommandSpec(
         name="part",
+        data_schema={"": "none"},
         module=MODULE,
         toggleable=False,
         aliases=("leave",),
@@ -133,6 +135,12 @@ async def part_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
 @command(
     CommandSpec(
         name="backfill",
+        data_schema={
+            "": "{enabled: bool, provider: str}",
+            "on, off": "{enabled: bool}",
+            "queue, gaps": "{jobs: [{id: int, channel_id: str, from_ms: int, to_ms: int, requested_by: str, requested_at: int, state: str, started_at: int?, finished_at: int?, fetched: int, inserted: int, complete: bool?, error: str?, kind: str}]}",
+            "cancel, a range": "{job: {id: int, channel_id: str, from_ms: int, to_ms: int, requested_by: str, requested_at: int, state: str, started_at: int?, finished_at: int?, fetched: int, inserted: int, complete: bool?, error: str?, kind: str}}",
+        },
         module=MODULE,
         toggleable=False,
         summary="Fill gaps in this channel's chat log from a history service",
