@@ -40,7 +40,7 @@ A multi-channel Twitch chat bot written in Python, self-hosted on a homelab in a
 |---|-------------|
 | F1 | **Log every chat message** into a queryable database. **Never delete log rows.** Deletions, timeouts, bans and clears are recorded as events and flagged on the affected messages. |
 | F2 | **Fill log gaps** caused by crashes, updates or disconnects from a third-party history service (logs.ivr.fi) |
-| F3 | **Command language** with pipes and chain operators (`\|`, `&&`, `\|\|`, grouping, `>`/`>>` variable writes) and sentinel commands (`true`, `false`, `default`, `fail`). A pipe stops on failure, and `\|\|` handles failures. Details are in the language proposal. |
+| F3 | **Command language** with pipes and chain operators (`\|`, `&&`, `\|\|`, grouping, `->`/`-->` variable writes) and sentinel commands (`true`, `false`, `default`, `fail`). A pipe stops on failure, and `\|\|` handles failures. Details are in the language proposal. |
 | F4 | **Commands return three things:** an exit code (0 = success), a formatted message (shown when it's the final result) and structured data (usable by later commands, e.g. `{_1[key]}` after `random`). Each command's `data_schema` says what its data holds. |
 | F5 | **Permission tiers:** Twitch built-ins (broadcaster, lead mod, mod, VIP, sub), custom roles (e.g. ambassador) at any rank including above moderator, and **global bot owners and bot admins** above everything |
 | F6 | **Cooldowns:** a global cooldown per tier **and** a per-user cooldown. **Both must have expired** for the command to run. Rejections are silent, with an optional **callback** that can customize the response. |
@@ -340,7 +340,7 @@ async def logsearch_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -
 |------|---------|
 | Preflight | Every command in the expression is resolved and policy-checked **before anything runs**. Commands on an operator branch that may never run are still checked, which keeps `!explain` predictable. |
 | Limits | 16 commands per expression (after expansion), 3 s per stage, 6 s in total, 4 KB of data per stage, final message up to 2 chat messages, custom command nesting depth 3, cycle detection |
-| Operators | `\|` stops on failure. `&&`/`\|\|` branch on the exit code. There is no `;` (reserved). `>`/`>>` store only on success. |
+| Operators | `\|` stops on failure. `&&`/`\|\|` branch on the exit code. There is no `;` (reserved). `->`/`-->` store only on success. |
 | Output shown | Only the **message of the last executed command**, and only if it isn't empty |
 | Arguments | Declared param types and inline `{arg.N:type}` are validated before the body runs. Failure returns code 2 with generated usage text. |
 | Re-entrancy | Output is never parsed as a command. The bot ignores its own messages. |
@@ -837,7 +837,7 @@ Resolved in review round 1:
 - Admin means global bot owners and bot admins.
 
 Resolved in review round 2:
-- `>` stores only on success. Fallbacks are written `( cmd || default 123 ) > x`.
+- `->` stores only on success (`>` before language 2.0). Fallbacks are written `( cmd || default 123 ) -> x`.
 - No keyword aliases.
 - `{arg.N+}` strips quotes (a test item).
 - Write grants stay.
