@@ -13,15 +13,15 @@ from vex_platform.jobs import JobRuntime, Registry
 from doomtp_bot import __version__
 from doomtp_bot.api.app import create_app
 from doomtp_bot.api.keys import ApiKeyService
+from doomtp_bot.app.dispatch import Dispatcher
 from doomtp_bot.audit.log import TABLE as AUDIT_TABLE
 from doomtp_bot.audit.log import copy_legacy_audit
+from doomtp_bot.channels.capabilities import MODERATE, CapabilityProbe, granted_by
+from doomtp_bot.channels.manager import ChannelManager
 from doomtp_bot.chatlog.queries import latest_badges
 from doomtp_bot.chatlog.writer import ChatLogWriter
 from doomtp_bot.config import Settings
 from doomtp_bot.core.bot_events import BotEvents, BotRuns
-from doomtp_bot.core.capabilities import MODERATE, CapabilityProbe, granted_by
-from doomtp_bot.core.channels import ChannelManager
-from doomtp_bot.core.dispatch import Dispatcher
 from doomtp_bot.core.events import Event
 from doomtp_bot.core.health import ComponentHealth, HealthRegistry, Status
 from doomtp_bot.core.instance_lock import InstanceLock, InstanceLockError

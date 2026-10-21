@@ -12,9 +12,9 @@ from httpx import ASGITransport
 from doomtp_bot.api.app import create_app
 from doomtp_bot.api.keys import ApiKeyService
 from doomtp_bot.api.sessions import SESSION_COOKIE
+from doomtp_bot.channels.manager import ChannelManager
 from doomtp_bot.chatlog.writer import ChatLogWriter
 from doomtp_bot.clock import now_ms
-from doomtp_bot.core.channels import ChannelManager
 from doomtp_bot.core.health import ComponentHealth, HealthRegistry, Status
 from doomtp_bot.customcmds.packs import PackService
 from doomtp_bot.customcmds.resolution import CustomCommandLoader

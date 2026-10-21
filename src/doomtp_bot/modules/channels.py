@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from vex_platform.actor import Actor as JobActor
 
+from doomtp_bot.channels.manager import ChannelBanned
 from doomtp_bot.clock import now_ms
-from doomtp_bot.core.channels import ChannelBanned
 from doomtp_bot.history.jobs import GAPS, OPEN_STATES, BackfillJob, BackfillJobs, BackfillRefused
 from doomtp_bot.modules._common import actor, rank, sign_of, user_arg
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK, BROADCASTER_RANK

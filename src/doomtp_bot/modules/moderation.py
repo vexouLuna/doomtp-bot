@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from doomtp_bot.core.capabilities import BROADCAST, MODERATE, RAIDS
+from doomtp_bot.channels.capabilities import BROADCAST, MODERATE, RAIDS
 from doomtp_bot.modules._common import policy_of, rank, reject_filtered
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command

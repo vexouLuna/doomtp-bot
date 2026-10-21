@@ -19,15 +19,15 @@ from doomtp_bot.core.events import (
 from doomtp_bot.core.streams import live_fields
 from doomtp_bot.lang.ast import invocations
 from doomtp_bot.lang.parser import DEFAULT_PREFIX, looks_like_command
-from doomtp_bot.runtime.result import Code
+from doomtp_bot.runtime.engine import should_log_run
 from doomtp_bot.runtime.spec import LogLevel
 from doomtp_bot.triggers.reference import NOTICE_TRIGGER_TYPE, trigger_payload
 
 if TYPE_CHECKING:
     from collections.abc import Coroutine, Sequence
 
+    from doomtp_bot.channels.manager import ChannelManager
     from doomtp_bot.chatlog.writer import ChatLogWriter
-    from doomtp_bot.core.channels import ChannelManager
     from doomtp_bot.core.links import BotBadges
     from doomtp_bot.core.outbox import Outbox
     from doomtp_bot.core.streams import StreamStatus
@@ -46,22 +46,6 @@ log = structlog.get_logger(__name__)
 # Twitch's "Chat Bot" badge. Messages from other verified bots never trigger commands. (Verify set_id live.)
 BOT_BADGE_SET_IDS = frozenset({"bot-badge"})
 MAX_CONCURRENT_RUNS = 50
-
-
-def should_log_run(report: RunReport, level: LogLevel) -> bool:
-    """Per-command log level (architecture §4.5)."""
-    code = report.result.code
-    if level is LogLevel.OFF:
-        return False
-    if level is LogLevel.ALL:
-        return True
-    if code in (Code.UNKNOWN, Code.COOLDOWN, Code.DENIED):
-        return False
-    if level is LogLevel.ERRORS:
-        return code != Code.OK
-    if level is LogLevel.OUTPUT:
-        return code != Code.OK or bool(report.send) or bool(report.committed)
-    return True
 
 
 def _reply_to(msg: ChatMessage) -> dict[str, str] | None:

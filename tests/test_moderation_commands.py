@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 import doomtp_bot.modules
-from doomtp_bot.core.capabilities import BROADCAST, MODERATE, RAIDS
+from doomtp_bot.channels.capabilities import BROADCAST, MODERATE, RAIDS
 from doomtp_bot.modules import builtin_registry
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.service import PolicyService

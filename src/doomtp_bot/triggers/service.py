@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 import structlog
 
 from doomtp_bot.audit.log import write_audit
+from doomtp_bot.channels import capabilities
 from doomtp_bot.clock import now_ms
-from doomtp_bot.core import capabilities
 from doomtp_bot.lang import SYNTAX_VERSION
 from doomtp_bot.lang.ast import invocations
 from doomtp_bot.lang.errors import ParseError

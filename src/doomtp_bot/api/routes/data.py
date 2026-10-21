@@ -46,9 +46,9 @@ from doomtp_bot.api.access import (
 )
 from doomtp_bot.api.routes.session import client_address
 from doomtp_bot.audit.log import read_audit
+from doomtp_bot.channels.manager import ChannelBanned
 from doomtp_bot.chatlog import queries, timeline
 from doomtp_bot.clock import now_ms
-from doomtp_bot.core.channels import ChannelBanned
 from doomtp_bot.customcmds.packs import custom_modules
 from doomtp_bot.customcmds.params import to_params
 from doomtp_bot.customcmds.resolution import MODULE as CUSTOM_MODULE

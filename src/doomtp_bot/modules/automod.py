@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from doomtp_bot.core.capabilities import MODERATE
+from doomtp_bot.channels.capabilities import MODERATE
 from doomtp_bot.moderation.automod import ACTIONS, MAX_TIMEOUT_S
 from doomtp_bot.modules._common import actor, policy_of
 from doomtp_bot.runtime.context import Args, CommandContext

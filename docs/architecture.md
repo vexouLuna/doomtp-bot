@@ -91,7 +91,7 @@ flowchart TB
     ES --> ADP["twitch/ adapter<br/>map · dedupe by message_id"]
     RM -.-> HIST["history/<br/>gap detect · IRC parse · backfill"]
 
-    ADP --> DISP{{"core/dispatch<br/>one ordered pass per event"}}
+    ADP --> DISP{{"app/dispatch<br/>one ordered pass per event"}}
     HIST -.-> DISP
 
     DISP --> LOG["chatlog/ writer<br/>batched, never blocks"]
@@ -704,13 +704,16 @@ Everything here is built (✔):
 
 ```
 src/doomtp_bot/
-├─ __main__.py  config.py  clock.py                                        ✔ wiring, settings, now_ms
-├─ core/        events.py dispatch.py channels.py outbox.py health.py      ✔ dispatch calls each step directly
+├─ __main__.py  config.py  clock.py  scopes.py  ratelimit.py              ✔ wiring, settings, now_ms, GLOBAL, sliding windows
+├─ app/         dispatch.py                                                ✔ dispatch calls each step directly
+├─ core/        events.py outbox.py health.py links.py build.py            ✔ leaf pieces: nothing here imports the packages above
 │               metrics.py                                                 ✔ ADR-0015 counters
-│               instance_lock.py capabilities.py streams.py                ✔ ADR-0007 probe and stream poller
+│               instance_lock.py streams.py schedule.py bot_events.py      ✔ stream poller, ADR-0034 events
+├─ channels/    manager.py capabilities.py                                 ✔ ADR-0007 joining and the capability probe
 ├─ twitch/      client.py mapping.py auth.py tokens.py    # only place importing twitchio  ✔
-├─ history/     provider.py backfill.py queue.py irc_parse.py              ✔ ADR-0008, ADR-0024
-├─ chatlog/     writer.py queries.py timeline.py                           ✔ writes; the shared reads (search); the paged log
+├─ history/     provider.py backfill.py queue.py                           ✔ ADR-0008, ADR-0024
+├─ chatlog/     writer.py queries.py timeline.py gaps.py                   ✔ writes; the shared reads (search); the paged log
+│               irc_parse.py irc_convert.py events.py                      ✔ stored IRC lines in EventSub's terms
 ├─ moderation/  index.py automod.py                                        ✔
 ├─ lang/        parser.py (PEG, spec App. C) ast.py errors.py              ✔ syntax (versioned)
 ├─ runtime/     engine.py resolver.py preflight.py executor.py result.py   ✔

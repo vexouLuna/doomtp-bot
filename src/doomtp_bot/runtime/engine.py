@@ -24,6 +24,7 @@ from doomtp_bot.runtime.preflight import preflight
 from doomtp_bot.runtime.registry import CommandRegistry
 from doomtp_bot.runtime.resolver import BuiltinResolver, CustomTarget, Resolver
 from doomtp_bot.runtime.result import Code, Result, error_result
+from doomtp_bot.runtime.spec import LogLevel
 from doomtp_bot.runtime.values import UserResolver
 from doomtp_bot.runtime.variables import (
     AllowAllAccess,
@@ -56,6 +57,22 @@ class RunReport:
     cancelled: bool = False
     duration_ms: int = 0
     ast: Node | None = None
+
+
+def should_log_run(report: RunReport, level: LogLevel) -> bool:
+    """Per-command log level (architecture §4.5)."""
+    code = report.result.code
+    if level is LogLevel.OFF:
+        return False
+    if level is LogLevel.ALL:
+        return True
+    if code in (Code.UNKNOWN, Code.COOLDOWN, Code.DENIED):
+        return False
+    if level is LogLevel.ERRORS:
+        return code != Code.OK
+    if level is LogLevel.OUTPUT:
+        return code != Code.OK or bool(report.send) or bool(report.committed)
+    return True
 
 
 def _record_executed(report: RunReport, scope: Scope) -> None:

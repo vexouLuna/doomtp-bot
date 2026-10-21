@@ -240,9 +240,9 @@ async def test_match_conditions_filter_events(h: Harness) -> None:
 
 async def test_the_dispatcher_runs_listeners_and_notification_triggers(dbs: Databases) -> None:
     """The whole path: a chat line, a raid notification and a stream going live reach their triggers."""
+    from doomtp_bot.app.dispatch import Dispatcher
+    from doomtp_bot.channels.manager import ChannelManager
     from doomtp_bot.chatlog.writer import ChatLogWriter
-    from doomtp_bot.core.channels import ChannelManager
-    from doomtp_bot.core.dispatch import Dispatcher
     from doomtp_bot.core.events import ChatMessage, StreamStatusChanged
     from doomtp_bot.moderation.index import ModerationIndex
 
@@ -362,9 +362,9 @@ async def test_the_dispatcher_runs_listeners_and_notification_triggers(dbs: Data
 
 async def _watching_dispatcher(dbs: Databases, *, pyramid_trigger: bool) -> tuple[Any, FakeSender, Any]:
     """A dispatcher with the pyramid watcher, and optionally a `pyramid` trigger that says what it saw."""
+    from doomtp_bot.app.dispatch import Dispatcher
+    from doomtp_bot.channels.manager import ChannelManager
     from doomtp_bot.chatlog.writer import ChatLogWriter
-    from doomtp_bot.core.channels import ChannelManager
-    from doomtp_bot.core.dispatch import Dispatcher
     from doomtp_bot.moderation.index import ModerationIndex
     from doomtp_bot.watchers import PyramidWatcher
 

@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from doomtp_bot.api.app import create_app
-from doomtp_bot.core.capabilities import granted_by
+from doomtp_bot.channels.capabilities import granted_by
 from doomtp_bot.core.events import ChatMessage, Event
 from doomtp_bot.core.health import HealthRegistry
 from doomtp_bot.storage.db import Databases

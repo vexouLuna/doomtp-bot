@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Protocol
 
 import structlog
 
-from doomtp_bot.core.capabilities import MODERATE
+from doomtp_bot.channels.capabilities import MODERATE
 from doomtp_bot.policy.roles import MODERATOR_RANK
 
 if TYPE_CHECKING:

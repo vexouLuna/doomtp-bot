@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from doomtp_bot.core.capabilities import CapabilityProbe, granted_by, tier_for
-from doomtp_bot.core.channels import ChannelManager
+from doomtp_bot.channels.capabilities import CapabilityProbe, granted_by, tier_for
+from doomtp_bot.channels.manager import ChannelManager
 from doomtp_bot.core.events import StreamStatusChanged
 from doomtp_bot.core.streams import StreamPoller, StreamStatus
 from doomtp_bot.policy.repository import Actor

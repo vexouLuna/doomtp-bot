@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 
+from doomtp_bot.app.dispatch import Dispatcher
+from doomtp_bot.channels.capabilities import MODERATE
+from doomtp_bot.channels.manager import ChannelManager
 from doomtp_bot.chatlog.writer import ChatLogWriter
-from doomtp_bot.core.capabilities import MODERATE
-from doomtp_bot.core.channels import ChannelManager
-from doomtp_bot.core.dispatch import Dispatcher
 from doomtp_bot.core.events import Badge, ChatMessage
 from doomtp_bot.core.outbox import Outbox, SendResult
 from doomtp_bot.filters.service import FilterService

@@ -17,11 +17,11 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from doomtp_bot.core.dispatch import should_log_run
 from doomtp_bot.core.streams import live_fields
 from doomtp_bot.lang.ast import invocations
 from doomtp_bot.lang.parser import Context
 from doomtp_bot.policy.cooldowns import CooldownTracker
+from doomtp_bot.runtime.engine import should_log_run
 from doomtp_bot.runtime.executor import ScopeArgs
 from doomtp_bot.runtime.spec import Cooldown
 from doomtp_bot.triggers.service import MIN_CHANNEL_COOLDOWN_S, Trigger

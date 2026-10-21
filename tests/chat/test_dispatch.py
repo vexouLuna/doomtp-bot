@@ -10,9 +10,9 @@ from typing import Any
 
 import pytest
 
+from doomtp_bot.app.dispatch import Dispatcher
+from doomtp_bot.channels.manager import ChannelManager
 from doomtp_bot.chatlog.writer import ChatLogWriter
-from doomtp_bot.core.channels import ChannelManager
-from doomtp_bot.core.dispatch import Dispatcher
 from doomtp_bot.core.events import Badge, ChatCleared, ChatMessage, ChatNotification, MessageDeleted
 from doomtp_bot.core.links import BotBadges
 from doomtp_bot.core.outbox import BANNED, Outbox, SendResult
