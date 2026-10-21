@@ -460,7 +460,14 @@ async def run(settings: Settings) -> None:
         admin_password_networks=settings.admin_password_networks,
         jobs=jobs,
         user_lookup_origins=settings.user_lookup_origins,
+        secure_cookies=settings.secure_cookies,
     )
+    if settings.forwarding_undoes_password_networks():
+        log.warning(
+            "web.forwarded_allow_ips_open",
+            reason="WEB_FORWARDED_ALLOW_IPS is *, so any client can claim an address in ADMIN_PASSWORD_NETWORKS;"
+            " name the reverse proxy's address instead",
+        )
     server = uvicorn.Server(
         uvicorn.Config(
             app,

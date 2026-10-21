@@ -118,6 +118,14 @@ async def test_the_cookie_is_secure_behind_https(app: Any) -> None:
     assert "secure" in response.headers["set-cookie"].lower()
 
 
+async def test_the_cookie_is_secure_when_the_site_is_https_even_over_plain_http(app: Any) -> None:
+    """Behind a TLS proxy uvicorn doesn't trust, requests read as http; PUBLIC_BASE_URL still says https."""
+    app.state.secure_cookies = True
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        response = await http.post("/api/v1/session", json={"password": PASSWORD})
+    assert "secure" in response.headers["set-cookie"].lower()
+
+
 async def test_logins_are_rate_limited_per_address(client: httpx.AsyncClient, app: Any) -> None:
     app.state.login_limiter = LoginLimiter(attempts=2)
     for _ in range(2):

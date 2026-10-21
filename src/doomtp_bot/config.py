@@ -106,6 +106,18 @@ class Settings(BaseSettings):
         return urlunsplit(parts._replace(netloc=f"{userinfo}@{host}"))
 
     @property
+    def secure_cookies(self) -> bool:
+        """Cookies are `Secure` once the site is reached over https, whether or not the proxy is trusted."""
+        return self.public_base_url.lower().startswith("https://")
+
+    def forwarding_undoes_password_networks(self) -> bool:
+        """WEB_FORWARDED_ALLOW_IPS trusts every peer while the admin password is limited to some networks.
+        Then any client can claim a private address in X-Forwarded-For, and the limit means nothing."""
+        trusts_all = "*" in {p.strip() for p in self.web_forwarded_allow_ips.split(",")}
+        limited = "*" not in {p.strip() for p in self.admin_password_networks.split(",")}
+        return trusts_all and limited and self.admin_password_value() is not None
+
+    @property
     def lock_path(self) -> Path:
         return self.data_dir / ".lock"
 

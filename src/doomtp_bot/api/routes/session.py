@@ -166,6 +166,12 @@ async def require_session(request: Request, *, write: bool, admin: bool = True) 
     return session
 
 
+def secure_cookies(request: Request) -> bool:
+    """Whether cookies get `Secure`: on an https request, and always when PUBLIC_BASE_URL is https. Behind a
+    proxy uvicorn doesn't trust, the scheme reads as http even though browsers reached the site over https."""
+    return request.url.scheme == "https" or bool(getattr(request.app.state, "secure_cookies", False))
+
+
 def set_session_cookie(request: Request, response: Response, session: Session) -> None:
     """The cookie for a new session, from the password here or a Twitch sign-in (`/auth/admin/callback`)."""
     response.set_cookie(
@@ -174,7 +180,7 @@ def set_session_cookie(request: Request, response: Response, session: Session) -
         max_age=int(_auth(request).ttl_s),
         httponly=True,
         samesite="lax",
-        secure=request.url.scheme == "https",
+        secure=secure_cookies(request),
     )
 
 
