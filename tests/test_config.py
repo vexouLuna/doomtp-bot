@@ -79,6 +79,6 @@ def test_trusting_every_proxy_undoes_the_password_networks(monkeypatch: pytest.M
     assert settings().forwarding_undoes_password_networks()
     monkeypatch.setenv("ADMIN_PASSWORD_NETWORKS", "*")  # the password is meant to work from anywhere
     assert not settings().forwarding_undoes_password_networks()
-    monkeypatch.setenv("ADMIN_PASSWORD_NETWORKS", "10.0.0.0/8")
+    monkeypatch.setenv("ADMIN_PASSWORD_NETWORKS", "192.0.2.0/24")  # a documentation range
     monkeypatch.delenv("ADMIN_PASSWORD")
     assert not settings().forwarding_undoes_password_networks()  # no password, nothing to protect
