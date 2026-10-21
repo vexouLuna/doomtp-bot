@@ -11,7 +11,23 @@ from vex_platform.jobs import JobRuntime
 
 from doomtp_bot import __version__
 from doomtp_bot.api import v2
-from doomtp_bot.api.routes import auth, bot, commands, data, health, language, manage, session, site
+from doomtp_bot.api.routes import (
+    auth,
+    backfill,
+    bot,
+    commands,
+    data,
+    filters,
+    health,
+    http_hosts,
+    language,
+    log,
+    manage,
+    session,
+    site,
+    triggers,
+    variables,
+)
 from doomtp_bot.api.sessions import AdminAuth, LoginLimiter, ReadLimiter, parse_networks
 from doomtp_bot.api.v2_users import parse_origins
 from doomtp_bot.config import LOCAL_NETWORKS
@@ -54,7 +70,9 @@ def create_app(
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(language.router)
-    app.include_router(data.router)
+    # /api/v1, one router per resource; no two of their routes can match the same request
+    for module in (data, backfill, filters, triggers, variables, http_hosts, log):
+        app.include_router(module.router)
     app.include_router(manage.router)
     app.include_router(commands.router)
     app.include_router(bot.router)

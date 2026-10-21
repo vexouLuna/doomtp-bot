@@ -732,7 +732,8 @@ src/doomtp_bot/
 │               moderation.py logsearch.py                                 ✔ timeout, ban, shoutout, chat modes, pins… (§4.3); log search
 │               httpget.py                                                 ✔ `http get`, only in bot admins' commands (ADR-0020)
 └─ api/         app.py keys.py sessions.py access.py grammar.py            ✔ no pages: those are doomtp-web's (ADR-0016)
-                routes/ (health auth language data session site)          ✔
+                routes/ (health auth language session site data backfill  ✔ data: channels, modules,
+                filters triggers variables http_hosts log commands manage bot)   commands, publications
                 static/editor/editor.js                                    ✔ the built editor bundle, committed
                 static/editor/tokens.js                                    ✔ its lexer alone, as an ES module, committed
                 static/grammar/*.svg                                       ✔ the railroad diagrams, committed

@@ -26,21 +26,23 @@ from doomtp_bot.api.routes.commands import (
 from doomtp_bot.api.routes.data import (
     CommandRule,
     Enabled,
-    FilterBody,
-    FilterPatch,
     _ignored_json,
     _login_of,
     _module_specs,
     _policy,
-    add_filter_to,
     apply_command_rule,
     command_spec,
-    filter_json,
-    patch_filter_in,
-    remove_filter_from,
     reset_rule,
     rule_json,
     toggle_module,
+)
+from doomtp_bot.api.routes.filters import (
+    FilterBody,
+    FilterPatch,
+    add_filter_to,
+    filter_json,
+    patch_filter_in,
+    remove_filter_from,
 )
 from doomtp_bot.customcmds.resolution import system_specs
 from doomtp_bot.policy.roles import BOT_OWNER_RANK, GLOBAL

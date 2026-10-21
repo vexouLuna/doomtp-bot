@@ -16,8 +16,9 @@ from pydantic import BaseModel, Field
 
 from doomtp_bot.api import deps
 from doomtp_bot.api.access import PERSONAL_READ, PERSONAL_WRITE, Caller, check_setting_role
-from doomtp_bot.api.routes.data import MAX_ROWS, _channel, _custom_json, _limits_json, _policy
+from doomtp_bot.api.routes.data import MAX_ROWS, _channel, _custom_json, _policy
 from doomtp_bot.api.routes.manage import ValueBody, _filter_check, commit
+from doomtp_bot.api.routes.variables import _limits_json
 from doomtp_bot.customcmds import params
 from doomtp_bot.customcmds.packs import Pack, PackService, SystemPackError
 from doomtp_bot.customcmds.service import CustomCommand, CustomCommandError, CustomCommandService

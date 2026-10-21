@@ -16,7 +16,8 @@ from pydantic import BaseModel, Field
 
 from doomtp_bot.api import deps
 from doomtp_bot.api.access import ADMIN_WRITE, PERSONAL_WRITE, READ, WRITE, Caller, check_setting_role
-from doomtp_bot.api.routes.data import _channel, _policy, _trigger_json
+from doomtp_bot.api.routes.data import _channel, _policy
+from doomtp_bot.api.routes.triggers import _trigger_json
 from doomtp_bot.clock import now_ms
 from doomtp_bot.lang import SYNTAX_VERSION
 from doomtp_bot.lang.errors import ParseError

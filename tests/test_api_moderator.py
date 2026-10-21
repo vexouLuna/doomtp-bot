@@ -11,7 +11,7 @@ import pytest
 from fastapi.routing import APIRoute
 
 from doomtp_bot.api.keys import ApiKeyService
-from doomtp_bot.api.routes import bot, commands, data, manage
+from doomtp_bot.api.routes import backfill, bot, commands, data, filters, http_hosts, log, manage, triggers, variables
 from doomtp_bot.api.sessions import SESSION_COOKIE, ReadLimiter
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.roles import BROADCASTER_RANK, GLOBAL, MODERATOR_RANK
@@ -123,7 +123,11 @@ ADMIN_ONLY = {
     ("POST", "/api/v1/global/packs"),
     ("DELETE", "/api/v1/global/packs/{name}"),
 }
-ROUTES = [r for m in (data, manage, commands, bot) for r in m.router.routes]
+ROUTES = [
+    r
+    for m in (data, backfill, filters, triggers, variables, http_hosts, log, manage, commands, bot)
+    for r in m.router.routes
+]
 
 
 def test_every_private_route_says_who_may_use_it() -> None:

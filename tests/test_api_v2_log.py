@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 from doomtp_bot.api.keys import ApiKeyService
-from doomtp_bot.api.routes.data import _log_reader
+from doomtp_bot.api.routes.log import _log_reader
 from doomtp_bot.api.v2_log import log_router
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.storage.db import Connection
