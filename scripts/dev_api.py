@@ -42,8 +42,8 @@ from doomtp_bot.api.keys import ApiKeyService
 from doomtp_bot.api.routes.session import set_session_cookie
 from doomtp_bot.api.sessions import SESSION_COOKIE
 from doomtp_bot.audit.log import TABLE as AUDIT_TABLE
+from doomtp_bot.channels.manager import ChannelManager
 from doomtp_bot.chatlog.writer import ChatLogWriter
-from doomtp_bot.core.channels import ChannelManager
 from doomtp_bot.core.health import ComponentHealth, HealthRegistry, Status
 from doomtp_bot.customcmds.packs import PackService
 from doomtp_bot.customcmds.resolution import CustomCommandLoader
