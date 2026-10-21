@@ -22,6 +22,7 @@ from fastapi import Depends, HTTPException, Request
 from vex_platform.actor import VIAS, Via
 from vex_platform.actor import Actor as PlatformActor
 
+from doomtp_bot.api import deps
 from doomtp_bot.api.sessions import SESSION_COOKIE, AdminAuth, Session
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.roles import (
@@ -127,25 +128,18 @@ async def current_session(request: Request) -> Session | None:
     return session
 
 
-def _state(request: Request, name: str) -> Any:
-    found = getattr(request.app.state, name, None)
-    if found is None:
-        raise HTTPException(status_code=503, detail=f"{name} isn't available")
-    return found
-
-
 async def authenticate(request: Request, scope: str) -> Caller:
     """Who is calling. Raises 401/403 when they may not use `scope` at all."""
     header = request.headers.get("authorization", "")
     if header.lower().startswith("bearer "):
-        keys = _state(request, "api_keys")
+        keys = deps.api_keys(request)
         key = await keys.verify(header[7:].strip())
         if key is None:
             raise HTTPException(status_code=401, detail="unknown or revoked API key")
         if not key.allows(scope):
             raise HTTPException(status_code=403, detail=f"this key has no {scope} scope")
         return Caller(f"key:{key.name}", API_ACTOR)
-    auth: AdminAuth = _state(request, "admin_auth")
+    auth: AdminAuth = deps.admin_auth(request)
     token = request.cookies.get(SESSION_COOKIE)
     session = await current_session(request)
     if session is not None:

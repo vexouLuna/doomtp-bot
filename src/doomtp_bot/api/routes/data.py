@@ -25,6 +25,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from doomtp_bot.api import deps
 from doomtp_bot.api.access import (
     ADMIN_READ,
     ADMIN_WRITE,
@@ -88,15 +89,8 @@ MAX_ROWS = 500
 
 
 # ── plumbing ────────────────────────────────────────────────────────────────
-def _state(request: Request, name: str) -> Any:
-    found = getattr(request.app.state, name, None)
-    if found is None:
-        raise HTTPException(status_code=503, detail=f"{name} isn't available")
-    return found
-
-
 def _policy(request: Request) -> PolicyService:
-    return _state(request, "policy")  # type: ignore[no-any-return]
+    return deps.policy(request)
 
 
 def _channel(request: Request, login: str) -> ChannelSettings:
@@ -185,7 +179,7 @@ async def get_channel(request: Request, login: str, caller: Caller = READ) -> di
 @router.post("/channels", status_code=201)
 async def join_channel(request: Request, body: JoinRequest, caller: Caller = ADMIN_WRITE) -> dict[str, Any]:
     """Join a channel by login. The same path `!join` takes, including the EventSub subscriptions."""
-    channels, twitch = _state(request, "channels"), _state(request, "twitch")
+    channels, twitch = deps.channels(request), deps.twitch(request)
     user = await twitch.resolve_user(body.login)
     if user is None:
         raise HTTPException(status_code=404, detail=f"no Twitch user named {body.login}")
@@ -200,7 +194,7 @@ async def join_channel(request: Request, body: JoinRequest, caller: Caller = ADM
 async def part_channel(request: Request, login: str, caller: Caller = BROADCASTER_WRITE) -> dict[str, Any]:
     """Leave the channel, as `!part` does: the broadcaster's call, or an admin's."""
     settings = _channel(request, login)
-    await _state(request, "channels").part(settings.channel_id, caller.actor)
+    await deps.channels(request).part(settings.channel_id, caller.actor)
     return {"login": settings.login, "status": "parted"}
 
 
@@ -213,7 +207,7 @@ async def join_own_channel(request: Request, caller: Caller = PERSONAL_WRITE) ->
         raise HTTPException(status_code=400, detail="sign in with Twitch to add the bot to your channel")
     login = caller.login.lower()
     try:
-        failed = await _state(request, "channels").join(caller.user_id, login, caller.actor)
+        failed = await deps.channels(request).join(caller.user_id, login, caller.actor)
     except ChannelBanned as exc:
         raise HTTPException(status_code=409, detail=f"{exc}; only an admin can rejoin it") from exc
     session = await current_session(request)
@@ -258,7 +252,7 @@ class BackfillRequest(BaseModel):
 
 
 def _backfill(request: Request) -> BackfillJobs:
-    return _state(request, "backfill")  # type: ignore[no-any-return]
+    return deps.backfill(request)
 
 
 @router.get("/channels/{login}/backfill")
@@ -315,7 +309,7 @@ async def _module_specs(request: Request, channel_id: str) -> dict[str, tuple[Co
     """Every module `!module` knows in a channel: the built-in ones, then the packs published there or
     globally and `custom` (ADR-0012). For `GLOBAL`, the packs published globally."""
     specs: dict[str, tuple[CommandSpec, str]] = {
-        c.spec.module: (c.spec, "builtin") for c in _state(request, "runtime").registry.all()
+        c.spec.module: (c.spec, "builtin") for c in deps.runtime(request).registry.all()
     }
     services = request.app.state
     found = await custom_modules(channel_id, getattr(services, "packs", None), getattr(services, "customcmds", None))
@@ -430,7 +424,7 @@ async def add_ignored(request: Request, login: str, body: IgnoreBody, caller: Ca
     if body.everywhere:
         _check_bot_wide(caller)
     settings, policy = _channel(request, login), _policy(request)
-    user = await _state(request, "twitch").resolve_user(body.login)
+    user = await deps.twitch(request).resolve_user(body.login)
     if user is None:
         raise HTTPException(status_code=404, detail=f"no Twitch user named {body.login}")
     scope = GLOBAL if body.everywhere else settings.channel_id
@@ -505,11 +499,11 @@ class CommandRule(BaseModel):
 
 def command_spec(request: Request, name: str) -> CommandSpec:
     """A command as `!perm` and `!cmd` find it: in the registry, then among the system packs' members."""
-    runtime = _state(request, "runtime")
+    runtime = deps.runtime(request)
     wanted = name.lower()
     found = runtime.registry.get(wanted)
     if found is not None:
-        return found.spec  # type: ignore[no-any-return]
+        return found.spec
     for spec in system_specs(runtime.resolver):
         if spec.name == wanted:
             return spec
@@ -560,7 +554,7 @@ def rule_json(policy: PolicyService, scope: str, spec: CommandSpec) -> dict[str,
 async def channel_commands(request: Request, login: str) -> dict[str, Any]:
     """What this channel's chat can actually run, with the rules that apply here. Public, like the page."""
     settings = _channel(request, login)
-    policy, runtime = _policy(request), _state(request, "runtime")
+    policy, runtime = _policy(request), deps.runtime(request)
     listing = [
         {
             **rule_json(policy, settings.channel_id, spec),
@@ -710,7 +704,7 @@ def _where(scope: str) -> str:
 @router.get("/channels/{login}/filters")
 async def list_filters(request: Request, login: str, caller: Caller = READ) -> dict[str, Any]:
     settings = _channel(request, login)
-    filters: FilterService = _state(request, "filters")
+    filters: FilterService = deps.filters(request)
     return {"filters": [filter_json(e) for e in filters.entries_for(settings.channel_id)]}
 
 
@@ -721,7 +715,7 @@ async def add_filter(request: Request, login: str, body: FilterBody, caller: Cal
 
 
 async def add_filter_to(request: Request, scope: str, body: FilterBody, caller: Caller) -> dict[str, Any]:
-    filters: FilterService = _state(request, "filters")
+    filters: FilterService = deps.filters(request)
     try:
         entry = await filters.add(
             channel_id=scope,
@@ -750,7 +744,7 @@ async def patch_filter(
 async def patch_filter_in(
     request: Request, scope: str, entry_id: int, body: FilterPatch, caller: Caller
 ) -> dict[str, Any]:
-    filters: FilterService = _state(request, "filters")
+    filters: FilterService = deps.filters(request)
     fields = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     enabled = fields.pop("enabled", None)
     if not fields and enabled is None:
@@ -788,7 +782,7 @@ async def remove_filter(request: Request, login: str, entry_id: int, caller: Cal
 
 
 async def remove_filter_from(request: Request, scope: str, entry_id: int, caller: Caller) -> dict[str, Any]:
-    filters: FilterService = _state(request, "filters")
+    filters: FilterService = deps.filters(request)
     if not await filters.remove(
         channel_id=scope,
         entry_id=entry_id,
@@ -856,14 +850,14 @@ def _run_as(request: Request, caller: Caller, login: str, wanted: int | None) ->
 @router.get("/channels/{login}/triggers")
 async def list_triggers(request: Request, login: str, caller: Caller = READ) -> dict[str, Any]:
     settings = _channel(request, login)
-    triggers: TriggerService = _state(request, "triggers")
+    triggers: TriggerService = deps.triggers(request)
     return {"triggers": [_trigger_json(t) for t in triggers.in_channel(settings.channel_id)]}
 
 
 @router.post("/channels/{login}/triggers", status_code=201)
 async def add_trigger(request: Request, login: str, body: TriggerBody, caller: Caller = WRITE) -> dict[str, Any]:
     settings = _channel(request, login)
-    triggers: TriggerService = _state(request, "triggers")
+    triggers: TriggerService = deps.triggers(request)
     if body.type not in TRIGGER_TYPES:
         raise HTTPException(status_code=400, detail=f"type must be one of: {', '.join(TRIGGER_TYPES)}")
     try:
@@ -892,7 +886,7 @@ async def patch_trigger(
 ) -> dict[str, Any]:
     """Turn a trigger on or off, or change it, checked as a new one is. Audited as `trigger.edit`."""
     settings = _channel(request, login)
-    triggers: TriggerService = _state(request, "triggers")
+    triggers: TriggerService = deps.triggers(request)
     fields = {k for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if not fields:
         raise HTTPException(status_code=400, detail="nothing to change")
@@ -938,7 +932,7 @@ async def patch_trigger(
 @router.delete("/channels/{login}/triggers/{trigger_id}")
 async def remove_trigger(request: Request, login: str, trigger_id: int, caller: Caller = WRITE) -> dict[str, Any]:
     settings = _channel(request, login)
-    triggers: TriggerService = _state(request, "triggers")
+    triggers: TriggerService = deps.triggers(request)
     try:
         removed = await triggers.remove(
             channel_id=settings.channel_id,
@@ -981,11 +975,11 @@ def _custom_json(command: Any) -> dict[str, Any]:
 @router.get("/custom-commands")
 async def custom_commands(request: Request, owner: str | None = Query(default=None, max_length=40)) -> dict[str, Any]:
     """Public: what is published everywhere, or one owner's shared commands."""
-    service: CustomCommandService = _state(request, "customcmds")
+    service: CustomCommandService = deps.customcmds(request)
     if owner is None:
         published = await service.publications_in(GLOBAL)
         return {"commands": [{**_custom_json(c), "published_as": p.name} for p, c in published]}
-    twitch = _state(request, "twitch")
+    twitch = deps.twitch(request)
     user = await twitch.resolve_user(owner)
     if user is None:
         raise HTTPException(status_code=404, detail=f"no Twitch user named {owner}")
@@ -997,7 +991,7 @@ async def custom_commands(request: Request, owner: str | None = Query(default=No
 async def publications(request: Request, login: str) -> dict[str, Any]:
     """Public: the custom commands this channel offers, and who wrote them."""
     settings = _channel(request, login)
-    service: CustomCommandService = _state(request, "customcmds")
+    service: CustomCommandService = deps.customcmds(request)
     found = await service.publications_in(settings.channel_id)
     return {
         "channel": settings.login,
@@ -1022,7 +1016,7 @@ async def set_publication(
     """`cc enable|disable`: for whoever reaches the channel's `publish_min_role`, as in chat."""
     settings = _channel(request, login)
     check_setting_role(request, caller, settings.login, "publish_min_role", "turn published commands on or off")
-    service: CustomCommandService = _state(request, "customcmds")
+    service: CustomCommandService = deps.customcmds(request)
     changed = await service.set_publication_status(
         channel_id=settings.channel_id,
         name=name,
@@ -1043,7 +1037,7 @@ ChannelNamespace = Literal["channel", "channel.chatter", "publisher.channel", "p
 
 async def _user_id(request: Request, login: str) -> str:
     """A Twitch login as `!var` takes it, `@` or not. 404 when Twitch knows nobody by that name."""
-    found = await _state(request, "twitch").resolve_user(login)
+    found = await deps.twitch(request).resolve_user(login)
     if found is None:
         raise HTTPException(status_code=404, detail=f"no Twitch user named {login.lstrip('@')}")
     return str(found["id"])
@@ -1077,7 +1071,7 @@ async def channel_variables(
     own, each chatter's (`channel.chatter`), and what published commands keep here (`publisher.channel`,
     `publisher.channel.chatter`). Logins come with the ids when they're known."""
     settings = _channel(request, login)
-    store = _state(request, "variable_store")
+    store = deps.variable_store(request)
     chatter_column = {"channel.chatter": "key2", "publisher.channel.chatter": "key3"}.get(ns)
     match = {"key2": settings.channel_id} if ns.startswith("publisher") else {"key1": settings.channel_id}
     if user is not None:
@@ -1127,7 +1121,7 @@ async def channel_variable_top(
 ) -> dict[str, Any]:
     """`!var top channel.chatter.<name> [count]`: the chatters with the highest number in it."""
     settings = _channel(request, login)
-    store = _state(request, "variable_store")
+    store = deps.variable_store(request)
     rows = await store.top("channel.chatter", settings.channel_id, "", _checked_name(name) or name, count)
     known = {c.channel_id: c.login for c in _policy(request).channels()}
     logins = await _logins_for(request, {uid for uid, _ in rows}, known)
@@ -1145,7 +1139,7 @@ async def channel_variable_top(
 async def channel_storage(request: Request, login: str, caller: Caller = READ) -> dict[str, Any]:
     """How much of its quota the channel uses, per namespace, like `!var usage channel`."""
     settings = _channel(request, login)
-    store = _state(request, "variable_store")
+    store = deps.variable_store(request)
     used = await store.usage("channel", settings.channel_id)
     limits = await store.limits_for("channel", settings.channel_id)
     return {
@@ -1170,7 +1164,7 @@ def _limits_json(limits: Limits | LimitOverride) -> dict[str, int | None]:
 
 
 async def _apply_limits(request: Request, kind: str, owner_id: str, body: LimitsBody, caller: Caller) -> None:
-    store = _state(request, "variable_store")
+    store = deps.variable_store(request)
     for field in sorted(body.model_fields_set):
         value = getattr(body, field)
         if kind == "*" and value is None:
@@ -1180,7 +1174,7 @@ async def _apply_limits(request: Request, kind: str, owner_id: str, body: Limits
 
 @router.get("/variable-limits")
 async def variable_limits(request: Request, caller: Caller = ADMIN_READ) -> dict[str, Any]:
-    store = _state(request, "variable_store")
+    store = deps.variable_store(request)
     defaults = await store.defaults()
     return {
         "defaults": _limits_json(defaults),
@@ -1194,7 +1188,7 @@ async def variable_limits(request: Request, caller: Caller = ADMIN_READ) -> dict
 @router.patch("/variable-limits/default")
 async def set_default_limits(request: Request, body: LimitsBody, caller: Caller = ADMIN_WRITE) -> dict[str, Any]:
     await _apply_limits(request, "*", "*", body, caller)
-    defaults = await _state(request, "variable_store").defaults()
+    defaults = await deps.variable_store(request).defaults()
     return _limits_json(defaults)
 
 
@@ -1205,11 +1199,11 @@ async def set_owner_limits(
     """One channel's, publisher's or chatter's override, by Twitch login."""
     if kind not in OWNER_KINDS:
         raise HTTPException(status_code=404, detail=f"owner kind must be one of {', '.join(OWNER_KINDS)}")
-    found = await _state(request, "twitch").resolve_user(user)
+    found = await deps.twitch(request).resolve_user(user)
     if found is None:
         raise HTTPException(status_code=404, detail=f"no Twitch user named {user}")
     await _apply_limits(request, kind, found["id"], body, caller)
-    store = _state(request, "variable_store")
+    store = deps.variable_store(request)
     own = await store.override(kind, found["id"])
     limits = await store.limits_for(kind, found["id"])
     return {
@@ -1238,8 +1232,7 @@ class HttpLimitsBody(BaseModel):
 
 
 def _hosts(request: Request) -> HostStore:
-    hosts: HostStore = _state(request, "http_hosts")
-    return hosts
+    return deps.http_hosts(request)
 
 
 @router.get("/http-hosts")
@@ -1347,7 +1340,7 @@ async def command_runs(
     caller: Caller = READ,
 ) -> dict[str, Any]:
     settings = _channel(request, login)
-    conn = _state(request, "chatlog_db")
+    conn = deps.chatlog_db(request)
     async with await conn.execute(
         "SELECT user_id, trigger_type, expr, code, message, duration_ms, cancelled_reason, at"
         " FROM command_runs WHERE channel_id = %s ORDER BY at DESC LIMIT %s",
@@ -1368,7 +1361,7 @@ async def search_messages(
     """Full-text search over the channel's log. The public see no removed messages."""
     settings = _channel(request, login)
     rows = await queries.search_messages(
-        _state(request, "chatlog_db"), settings.channel_id, q, limit=limit, visible_only=_is_public(caller)
+        deps.chatlog_db(request), settings.channel_id, q, limit=limit, visible_only=_is_public(caller)
     )
     return {"query": q, "messages": rows}
 
@@ -1402,7 +1395,7 @@ async def channel_log(
         kinds = [k for k in kinds if k != "moderation"]
         if not kinds:
             raise HTTPException(status_code=403, detail=f"only a moderator can read {login}'s moderation log")
-    conn = _state(request, "chatlog_db")
+    conn = deps.chatlog_db(request)
     user_ids = None if user is None else await timeline.user_ids_for(conn, user)
     try:
         after = None if cursor is None else timeline.Cursor.decode(cursor)
@@ -1433,7 +1426,7 @@ async def channel_log_coverage(
     if until is not None and until <= since:
         raise HTTPException(status_code=422, detail="until must be after since")
     settings = _channel(request, login)
-    return await timeline.coverage(_state(request, "chatlog_db"), settings.channel_id, since, until)
+    return await timeline.coverage(deps.chatlog_db(request), settings.channel_id, since, until)
 
 
 # ADR-0026
@@ -1449,7 +1442,7 @@ async def audit(
 ) -> dict[str, Any]:
     """The newest changes first, a page at a time: pass `next` back as `before`. A moderator sees the
     channels they manage; anyone signed in sees their own changes everywhere with `actor=me`."""
-    conn, policy = _state(request, "bot_db"), _policy(request)
+    conn, policy = deps.bot_db(request), _policy(request)
     known = {c.channel_id: c.login for c in policy.channels()}
     own = actor == "me"
     actor_id: str | None = None
@@ -1458,7 +1451,7 @@ async def audit(
             raise HTTPException(status_code=400, detail="actor=me needs a Twitch sign-in")
         actor_id = caller.user_id
     elif actor is not None:
-        user = await _state(request, "twitch").resolve_user(actor)
+        user = await deps.twitch(request).resolve_user(actor)
         if user is None:
             raise HTTPException(status_code=404, detail=f"no Twitch user named {actor}")
         actor_id = user["id"]

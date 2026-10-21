@@ -13,8 +13,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from doomtp_bot import __version__
+from doomtp_bot.api import deps
 from doomtp_bot.api.grammar import GRAMMAR, GRAMMAR_RULES
-from doomtp_bot.api.routes.data import _channel, _custom_json, _state
+from doomtp_bot.api.routes.data import _channel, _custom_json
 from doomtp_bot.chatlog import stats as chatlog_stats
 from doomtp_bot.clock import now_ms
 from doomtp_bot.core.build import BUILD, STARTED_AT, uptime_s
@@ -85,7 +86,7 @@ async def explain_report(request: Request, token: str) -> dict[str, Any]:
 
 
 async def _packs_json(request: Request, channel_id: str, *, include_global: bool) -> list[dict[str, Any]]:
-    packs = _state(request, "packs")
+    packs = deps.packs(request)
     found = []
     for publication, pack in await packs.publications_in(channel_id, include_global=include_global):
         if publication.status != "active":

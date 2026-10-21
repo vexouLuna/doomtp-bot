@@ -14,8 +14,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from doomtp_bot.api import deps
 from doomtp_bot.api.access import ADMIN_WRITE, PERSONAL_WRITE, READ, WRITE, Caller, check_setting_role
-from doomtp_bot.api.routes.data import _channel, _policy, _state, _trigger_json
+from doomtp_bot.api.routes.data import _channel, _policy, _trigger_json
 from doomtp_bot.clock import now_ms
 from doomtp_bot.lang import SYNTAX_VERSION
 from doomtp_bot.lang.errors import ParseError
@@ -60,7 +61,7 @@ class TextBody(BaseModel):
 async def test_filter(request: Request, login: str, body: TextBody, caller: Caller = READ) -> dict[str, Any]:
     """What the word filter does to a message, and what the automod would do to a chatter who sent it."""
     settings = _channel(request, login)
-    result = _state(request, "filters").check(settings.channel_id, body.text)
+    result = deps.filters(request).check(settings.channel_id, body.text)
     automod: dict[str, Any] | None = None
     if settings.automod_action != "off" and result.blocked:
         automod = {"action": settings.automod_action}
@@ -81,7 +82,7 @@ async def test_filter(request: Request, login: str, body: TextBody, caller: Call
 async def test_listeners(request: Request, login: str, body: TextBody, caller: Caller = READ) -> dict[str, Any]:
     """Which listeners a chat line would set off, and what each would capture. Nothing runs."""
     settings = _channel(request, login)
-    matched = _state(request, "triggers").listeners_matching(settings.channel_id, body.text)
+    matched = deps.triggers(request).listeners_matching(settings.channel_id, body.text)
     return {"matches": [{"trigger": _trigger_json(t), "fields": fields} for t, fields in matched]}
 
 
@@ -174,7 +175,7 @@ async def add_role_member(
     role = _role_here(request, settings, name)
     if not _manageable(role, settings, caller, caller.rank_in(policy, settings.login)):
         raise HTTPException(status_code=403, detail=f"you can't manage {role.name}")
-    found = await _state(request, "twitch").resolve_user(user)
+    found = await deps.twitch(request).resolve_user(user)
     if found is None:
         raise HTTPException(status_code=404, detail=f"no Twitch user named {user}")
     expires = None if body.duration_s is None else now_ms() + body.duration_s * 1000
@@ -194,7 +195,7 @@ async def remove_role_member(
     role = _role_here(request, settings, name)
     if not _manageable(role, settings, caller, caller.rank_in(policy, settings.login)):
         raise HTTPException(status_code=403, detail=f"you can't manage {role.name}")
-    found = await _state(request, "twitch").resolve_user(user)
+    found = await deps.twitch(request).resolve_user(user)
     if found is None:
         raise HTTPException(status_code=404, detail=f"no Twitch user named {user}")
     removed = await policy.mutate(
@@ -233,7 +234,7 @@ async def set_callback(
 ) -> dict[str, Any]:
     settings, policy = _channel(request, login), _policy(request)
     scope = _callback_scope(kind, scope)
-    runtime = _state(request, "runtime")
+    runtime = deps.runtime(request)
     try:
         parse(body.expr, Context.CALLBACK, runtime.parser_params(settings.prefix))
     except ParseError as exc:
@@ -261,19 +262,19 @@ async def clear_callback(
 # ── the channel's variables: customecho and `!var set channel.…` ────────────
 def web_context(request: Request, settings: ChannelSettings, caller: Caller) -> ExecContext:
     """A run context for a write from the web: the caller as the invoker, as if they had typed it."""
-    policy, runtime = _policy(request), _state(request, "runtime")
+    policy, runtime = _policy(request), deps.runtime(request)
     invoker = None
     if caller.user_id is not None:
         role = caller.channel_role(policy, settings.login)
         badges = frozenset({role}) if role is not None else frozenset[str]()
         invoker = policy.build_chatter(settings.channel_id, caller.user_id, caller.login or "", badges=badges)
     channel = policy.channel_info(settings.channel_id, settings.login)
-    return runtime.make_context(channel=channel, invoker=invoker, trigger_type=caller.actor.via)  # type: ignore[no-any-return]
+    return runtime.make_context(channel=channel, invoker=invoker, trigger_type=caller.actor.via)
 
 
 async def commit(request: Request, ctx: ExecContext, op: WriteOp) -> None:
     try:
-        await _state(request, "variable_store").commit([op], ctx)
+        await deps.variable_store(request).commit([op], ctx)
     except VariableError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -288,7 +289,7 @@ def _var_key(ctx: ExecContext, namespace: str, name: str) -> Any:
 async def _customecho(request: Request, settings: ChannelSettings, caller: Caller) -> tuple[Any, Any, Any]:
     ctx = web_context(request, settings, caller)
     key = _var_key(ctx, "channel", "customecho")
-    current = await _state(request, "variable_store").get(key)
+    current = await deps.variable_store(request).get(key)
     return ctx, key, current
 
 
@@ -360,7 +361,7 @@ async def delete_channel_variable(
     check_setting_role(request, caller, settings.login, "channel_var_write_role", "write channel variables")
     ctx = web_context(request, settings, caller)
     key = _var_key(ctx, "channel", name)
-    if await _state(request, "variable_store").get(key) is MISSING:
+    if await deps.variable_store(request).get(key) is MISSING:
         raise HTTPException(status_code=404, detail=f"channel.{name} isn't set")
     await commit(request, ctx, WriteOp("delete", key))
     return {"name": name, "removed": True}
@@ -378,7 +379,7 @@ async def delete_chatter_variable(
     if not VAR_NAME_RE.match(name):
         raise HTTPException(status_code=400, detail=f"{name} isn't a variable name")
     key = VarKey("channel.chatter", settings.channel_id, user_id, name=name)
-    if await _state(request, "variable_store").get(key) is MISSING:
+    if await deps.variable_store(request).get(key) is MISSING:
         raise HTTPException(status_code=404, detail=f"channel.chatter.{name} isn't set for that chatter")
     await commit(request, web_context(request, settings, caller), WriteOp("delete", key))
     return {"name": name, "chatter_id": user_id, "removed": True}
@@ -389,5 +390,5 @@ async def delete_chatter_variable(
 async def probe_capabilities(request: Request, login: str, caller: Caller = ADMIN_WRITE) -> dict[str, Any]:
     """Measure again what the bot may do in the channel (a moderator or not), and store it."""
     settings = _channel(request, login)
-    found = await _state(request, "capabilities").probe(settings.channel_id)
+    found = await deps.capabilities(request).probe(settings.channel_id)
     return {"login": settings.login, "capabilities": sorted(found)}
