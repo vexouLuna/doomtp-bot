@@ -1,6 +1,6 @@
 # ADR-0030: View as, scoped on the server
 
-**Status:** Accepted, 2026-10-09
+**Status:** Superseded by [ADR-0036](0036-remove-the-view-as-preview.md), 2026-10-21 (accepted 2026-10-09)
 **Date:** 2026-10-09
 **Deciders:** Project owner
 
@@ -65,4 +65,4 @@ is case-insensitive and a `#` before the channel is ignored.
 1. [x] `X-View-As` in `api/access.py`: reads scoped, writes refused; `GET /session` and the key routes
    follow it. Tests in `tests/test_api_view_as.py`.
 2. [x] Documentation: architecture §11, this ADR.
-3. [ ] doomtp-web sends the header and drops its emulation (vEXOULZ/doomtp-web#67).
+3. [ ] ~~doomtp-web sends the header and drops its emulation (vEXOULZ/doomtp-web#67).~~ Withdrawn by ADR-0036.

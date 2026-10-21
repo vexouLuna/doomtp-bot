@@ -126,6 +126,15 @@ async def test_the_cookie_is_secure_when_the_site_is_https_even_over_plain_http(
     assert "secure" in response.headers["set-cookie"].lower()
 
 
+async def test_the_removed_preview_header_is_refused(client: httpx.AsyncClient) -> None:
+    """ADR-0036: a site still previewing must not get an admin's answers, or send writes as the admin."""
+    csrf = await _login(client)
+    preview = {"X-View-As": "user", "X-CSRF-Token": csrf}
+    assert (await client.get("/api/v1/session", headers=preview)).status_code == 400
+    assert (await client.get("/api/v1/channels", headers=preview)).status_code == 400
+    assert (await client.get("/api/v1/channels")).status_code == 200  # without it, all as before
+
+
 async def test_logins_are_rate_limited_per_address(client: httpx.AsyncClient, app: Any) -> None:
     app.state.login_limiter = LoginLimiter(attempts=2)
     for _ in range(2):
