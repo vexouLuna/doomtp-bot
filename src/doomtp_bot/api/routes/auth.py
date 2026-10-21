@@ -43,6 +43,9 @@ async def login(request: Request) -> Response:
     auth = _auth(request)
     if auth is None:
         return _page("Twitch is not configured", "Set TWITCH_CLIENT_ID and the client secret, then restart.", 503)
+    if not auth.bot_flow_ready:
+        # Anyone can open this page, so the account that may sign in has to be named first.
+        return _page("Twitch is not configured", "Set TWITCH_BOT_ID to the bot account's user ID, then restart.", 503)
     return RedirectResponse(auth.login_url(), status_code=302)
 
 
