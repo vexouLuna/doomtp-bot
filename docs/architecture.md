@@ -29,6 +29,27 @@ A multi-channel Twitch chat bot written in Python, self-hosted on a homelab in a
 | [ADR-0013](adr/0013-deploy-by-pulling-a-published-image.md) | CI publishes the image; the server pulls it on a timer |
 | [ADR-0014](adr/0014-storage-postgres-one-database-two-schemas.md) | **Postgres**: one database, a `bot` schema and a `chatlog` schema (supersedes ADR-0003) |
 | [ADR-0015](adr/0015-metrics-prometheus-text-on-the-api.md) | Metrics: counters in Prometheus text on `/metrics`, no new dependency |
+| [ADR-0016](adr/0016-web-ui-as-a-separate-site-over-the-json-api.md) | The web UI moves to a separate site over the JSON API |
+| [ADR-0017](adr/0017-moderator-sessions-through-twitch-sign-in.md) | Moderator sessions through Twitch sign-in |
+| [ADR-0018](adr/0018-command-language-v2-expressions-brackets-error-codes.md) | Command language v2 — `$` fields, brackets, expressions and numbered errors |
+| [ADR-0019](adr/0019-default-command-set.md) | The default command set, bot-owned packs and storage limits |
+| [ADR-0020](adr/0020-gated-http-query-primitive.md) | A gated HTTP query primitive |
+| [ADR-0021](adr/0021-integrate-on-dev-release-to-main.md) | Integrate on dev, release to main |
+| [ADR-0022](adr/0022-alembic-migrations-with-a-migrate-step.md) | Alembic migrations, run by a migrate step before the bot |
+| [ADR-0023](adr/0023-shared-sign-in-through-vexoulz-auth.md) | Shared sign-in through vexoulz-auth |
+| [ADR-0024](adr/0024-raw-events-and-ivr-logs-backfill.md) | Keep every event as Twitch sent it, and backfill older gaps from logs.ivr.fi |
+| [ADR-0025](adr/0025-chat-log-timeline-api.md) | The chat log as a paged timeline on the API |
+| [ADR-0026](adr/0026-web-access-mirrors-chat-rank.md) | Web access mirrors chat rank |
+| [ADR-0027](adr/0027-shared-jobs-api-and-audit-through-vex-platform.md) | Shared jobs, API and audit through vex-platform |
+| [ADR-0028](adr/0028-chat-watchers-and-the-pyramid-pack.md) | Chat watchers, and emote pyramids as a pack |
+| [ADR-0029](adr/0029-pack-triggers.md) | Pack triggers |
+| [ADR-0030](adr/0030-view-as-preview-header.md) | *(superseded by ADR-0036)* View as, scoped on the server |
+| [ADR-0031](adr/0031-trigger-cooldowns.md) | Trigger cooldowns |
+| [ADR-0032](adr/0032-triggers-on-your-own-packs.md) | Triggers on your own packs |
+| [ADR-0033](adr/0033-pack-member-ranks.md) | Ranks on pack members |
+| [ADR-0034](adr/0034-bot-event-triggers.md) | Triggers on the bot's own events |
+| [ADR-0035](adr/0035-twitch-user-lookup-for-chat-cards.md) | A Twitch user lookup for the sites' chat user cards |
+| [ADR-0036](adr/0036-remove-the-view-as-preview.md) | Remove the View as preview |
 
 ---
 
