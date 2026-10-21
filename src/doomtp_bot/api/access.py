@@ -36,27 +36,6 @@ Role = Literal["admin", "moderator", "user"]
 ChannelRole = Literal["broadcaster", "moderator"]
 API_ACTOR = Actor(None, "api")
 
-# The lowest rank that may change each channel setting, as in chat (ADR-0026): the chat settings are for
-# moderators; logging, backfill and the "who may" roles for the broadcaster.
-SETTING_RANKS: dict[str, int] = {
-    "prefix": MODERATOR_RANK,
-    "quiet_errors": MODERATOR_RANK,
-    "cc_edit_notice": MODERATOR_RANK,
-    "reply_hold_ms": MODERATOR_RANK,
-    "timezone": MODERATOR_RANK,
-    "automod_action": MODERATOR_RANK,
-    "automod_timeout_s": MODERATOR_RANK,
-    "public_log": MODERATOR_RANK,
-    "bot_enabled": MODERATOR_RANK,  # silencing the bot is a safety switch any moderator may pull
-    "slur_filter": MODERATOR_RANK,
-    "log_enabled": BROADCASTER_RANK,
-    "history_backfill": BROADCASTER_RANK,
-    "channel_var_write_role": BROADCASTER_RANK,
-    "grant_min_role": BROADCASTER_RANK,
-    "publish_min_role": BROADCASTER_RANK,
-    "create_min_role": BROADCASTER_RANK,
-    "var_admin_role": BROADCASTER_RANK,
-}
 REMOVED_VIEW_AS = "X-View-As"  # the preview header ADR-0036 took out
 RANK_NAMES = {MODERATOR_RANK: "a moderator", BROADCASTER_RANK: "the broadcaster", BOT_ADMIN_RANK: "an admin"}
 

@@ -34,7 +34,6 @@ from doomtp_bot.api.access import (
     PERSONAL_WRITE,
     RANK_NAMES,
     READ,
-    SETTING_RANKS,
     WRITE,
     WRITE_OWN,
     Caller,
@@ -59,6 +58,7 @@ from doomtp_bot.filters.service import FilterService
 from doomtp_bot.history.jobs import BackfillJobs, BackfillRefused
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK, GLOBAL
 from doomtp_bot.policy.service import PolicyService
+from doomtp_bot.policy.settings import CHANNEL_SETTINGS
 from doomtp_bot.policy.snapshot import ChannelSettings
 from doomtp_bot.runtime.spec import CommandSpec, LogLevel
 from doomtp_bot.runtime.variables import (
@@ -85,11 +85,6 @@ from doomtp_bot.webfetch.hosts import MAX_LIMIT, HostError, HostStore
 router = APIRouter(prefix="/api/v1", tags=["data"])
 
 MAX_ROWS = 500
-SETTABLE = (
-    "prefix", "quiet_errors", "cc_edit_notice", "log_enabled", "history_backfill", "public_log", "reply_hold_ms",
-    "timezone", "automod_action", "automod_timeout_s", "channel_var_write_role", "grant_min_role",
-    "publish_min_role", "create_min_role", "var_admin_role", "bot_enabled", "slur_filter",
-)  # fmt: skip
 
 
 # ── plumbing ────────────────────────────────────────────────────────────────
@@ -233,14 +228,14 @@ async def join_own_channel(request: Request, caller: Caller = PERSONAL_WRITE) ->
 async def patch_channel(request: Request, login: str, body: ChannelPatch, caller: Caller = WRITE) -> dict[str, Any]:
     settings = _channel(request, login)
     policy = _policy(request)
-    changes = {k: v for k, v in body.model_dump(exclude_unset=True).items() if k in SETTABLE}
+    changes = {k: v for k, v in body.model_dump(exclude_unset=True).items() if k in CHANNEL_SETTINGS}
     if not changes:
-        raise HTTPException(status_code=400, detail=f"nothing to change; fields: {', '.join(SETTABLE)}")
+        raise HTTPException(status_code=400, detail=f"nothing to change; fields: {', '.join(CHANNEL_SETTINGS)}")
     # Each field needs the rank chat asks for it; one field too high refuses the whole patch (ADR-0026).
     rank = caller.rank_in(policy, settings.login)
-    refused = sorted(k for k in changes if SETTING_RANKS[k] > rank)
+    refused = sorted(k for k in changes if CHANNEL_SETTINGS[k] > rank)
     if refused:
-        who = RANK_NAMES.get(max(SETTING_RANKS[k] for k in refused), "an admin")
+        who = RANK_NAMES.get(max(CHANNEL_SETTINGS[k] for k in refused), "an admin")
         raise HTTPException(status_code=403, detail=f"only {who} can change {', '.join(refused)}")
 
     async def write(repo: Any) -> None:

@@ -11,11 +11,14 @@ from typing import Any
 
 import pytest
 
+from doomtp_bot.api.routes.data import ChannelPatch
 from doomtp_bot.core import metrics
 from doomtp_bot.lang.parser import DEFAULT_PREFIX
 from doomtp_bot.modules import builtin_registry
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.service import PolicyService
+from doomtp_bot.policy.settings import BOT_COLUMNS, CHANNEL_COLUMNS, CHANNEL_SETTINGS
+from doomtp_bot.policy.snapshot import ChannelSettings
 from doomtp_bot.runtime.context import Chatter, ExecContext
 from doomtp_bot.runtime.engine import RunReport, Runtime
 from doomtp_bot.runtime.explain import explain
@@ -414,3 +417,11 @@ async def test_anyone_may_ignore_themselves_but_only_moderators_manage_the_list(
     assert await h.reply("viewer", "!unignore me") == "welcome back, Viewer"
     assert await h.reply("viewer", "!unignore me") == "you aren't ignored here"
     assert (await h.audit_actions())[-2:] == ["ignore.add", "ignore.remove"]
+
+
+def test_the_settings_table_the_snapshot_and_the_api_agree() -> None:
+    """One list of channel settings (policy/settings.py): the snapshot carries each, the API's patch body
+    accepts exactly those, and the repository writes them and the bot's own columns, nothing else."""
+    snapshot = {f.name for f in dataclasses.fields(ChannelSettings)} - {"channel_id", "login"}
+    assert set(ChannelPatch.model_fields) == set(CHANNEL_SETTINGS)
+    assert snapshot == set(CHANNEL_COLUMNS) and not BOT_COLUMNS & CHANNEL_SETTINGS.keys()

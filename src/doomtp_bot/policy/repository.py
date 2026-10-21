@@ -9,6 +9,7 @@ from doomtp_bot.audit.log import write_audit
 from doomtp_bot.clock import now_ms
 from doomtp_bot.lang.parser import DEFAULT_PREFIX
 from doomtp_bot.policy.roles import GLOBAL
+from doomtp_bot.policy.settings import CHANNEL_COLUMNS
 from doomtp_bot.storage.db import Connection, fetch_one, fetch_value, transaction
 
 
@@ -57,13 +58,7 @@ class PolicyRepository:
             return True
 
     async def set_channel_field(self, channel_id: str, column: str, value: object, actor: Actor) -> None:
-        allowed = {
-            "prefix", "active", "status", "tier", "capabilities", "reply_hold_ms", "log_enabled", "history_backfill",
-            "public_log", "quiet_errors", "cc_edit_notice", "timezone", "channel_var_write_role", "grant_min_role",
-            "publish_min_role", "create_min_role", "var_admin_role", "automod_action", "automod_timeout_s",
-            "bot_enabled", "slur_filter",
-        }  # fmt: skip
-        if column not in allowed:
+        if column not in CHANNEL_COLUMNS:
             raise ValueError(f"unknown channel setting {column}")
         async with transaction(self.conn):
             before = await fetch_one(
