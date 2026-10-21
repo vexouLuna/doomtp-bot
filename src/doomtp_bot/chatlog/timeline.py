@@ -33,8 +33,8 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from doomtp_bot.chatlog import events
+from doomtp_bot.chatlog.gaps import gaps_between
 from doomtp_bot.clock import now_ms
-from doomtp_bot.history.backfill import gaps_between
 from doomtp_bot.storage.db import Connection
 
 Kind = Literal["message", "notification", "moderation"]

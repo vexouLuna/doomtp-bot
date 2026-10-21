@@ -12,8 +12,9 @@ from vex_platform.jobs import JobRuntime
 from doomtp_bot import __version__
 from doomtp_bot.api import v2
 from doomtp_bot.api.routes import auth, bot, commands, data, health, language, manage, session, site
-from doomtp_bot.api.sessions import LOCAL_NETWORKS, AdminAuth, LoginLimiter, ReadLimiter, parse_networks
+from doomtp_bot.api.sessions import AdminAuth, LoginLimiter, ReadLimiter, parse_networks
 from doomtp_bot.api.v2_users import parse_origins
+from doomtp_bot.config import LOCAL_NETWORKS
 from doomtp_bot.core.health import HealthRegistry
 from doomtp_bot.twitch.auth import TwitchAuth
 

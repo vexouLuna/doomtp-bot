@@ -246,7 +246,7 @@ ivr.fi replaced it (ADR-0008's amendment).
    and moderation events.
 3. [x] `chatlog/events.py`: the one reader from `eventsub`, `irc` and `legacy` to the EventSub shape,
    with golden tests from real recent-messages and ivr.fi lines; `/log` built from it. *(2026-09-29:
-   `history/irc_convert.py` turns a PRIVMSG into `channel.chat.message`, a USERNOTICE into
+   `chatlog/irc_convert.py` turns a PRIVMSG into `channel.chat.message`, a USERNOTICE into
    `channel.chat.notification` (the notice's object by EventSub's field names, the `msg-param-*` tags it
    has no field for under `irc` by their IRC names) and CLEARMSG/CLEARCHAT into the moderation events.
    Golden tests use ivr.fi lines. `/log` reads every entry from `raw`, so a message entry now also has

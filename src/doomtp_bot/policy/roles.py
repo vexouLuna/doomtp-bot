@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-GLOBAL = "*"
+from doomtp_bot.scopes import GLOBAL as GLOBAL
 
 BUILTIN_RANKS: dict[str, int] = {
     "everyone": 0,

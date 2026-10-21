@@ -9,8 +9,11 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from doomtp_bot.api.sessions import LOCAL_NETWORKS
 from doomtp_bot.lang.parser import DEFAULT_PREFIX
+
+#: Where the password login is taken from unless ADMIN_PASSWORD_NETWORKS says otherwise: this host and
+#: the private ranges. The password is the way in when Twitch is down, not a second front door.
+LOCAL_NETWORKS = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"  # conventions:allow-infra
 
 
 class Settings(BaseSettings):

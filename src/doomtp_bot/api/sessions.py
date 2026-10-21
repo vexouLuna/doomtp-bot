@@ -21,10 +21,6 @@ from doomtp_bot.ratelimit import SlidingWindow
 SESSION_COOKIE = "doomtp_admin"
 SESSION_TTL_S = 8 * 3600
 SCRYPT = {"n": 2**14, "r": 8, "p": 1}
-#: Where the password login is taken from unless ADMIN_PASSWORD_NETWORKS says otherwise: this host and
-#: the private ranges. The password is the way in when Twitch is down, not a second front door.
-LOCAL_NETWORKS = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"  # conventions:allow-infra
-
 Networks = tuple[IPv4Network | IPv6Network, ...]
 
 

@@ -28,8 +28,8 @@ from datetime import UTC, datetime
 import psycopg
 from psycopg.rows import dict_row
 
+from doomtp_bot.chatlog.gaps import gaps_between
 from doomtp_bot.config import Settings
-from doomtp_bot.history.backfill import gaps_between
 from doomtp_bot.history.provider import NOT_LOGGED
 
 RECENT_DEFAULT = 7

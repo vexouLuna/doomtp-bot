@@ -13,14 +13,15 @@ from typing import TYPE_CHECKING, Final
 
 import structlog
 
+from doomtp_bot.chatlog import irc_convert
+from doomtp_bot.chatlog.gaps import gaps_between
+from doomtp_bot.chatlog.irc_parse import IrcLine, badges, parse_line
 from doomtp_bot.chatlog.writer import ChatLogWriter
 from doomtp_bot.clock import now_ms
 from doomtp_bot.core import metrics
 from doomtp_bot.core.events import Badge, ChatCleared, ChatMessage, ChatNotification, MessageDeleted
 from doomtp_bot.core.events import UserMessagesCleared as UserCleared
-from doomtp_bot.history import irc_convert
 from doomtp_bot.history.enrich import Enricher
-from doomtp_bot.history.irc_parse import IrcLine, badges, parse_line
 from doomtp_bot.history.provider import DEFAULT_LIMIT, PAUSED, HistoryProvider
 from doomtp_bot.storage.db import Connection, transaction
 
@@ -30,7 +31,6 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 GAP_GRACE_MS = 5_000  # ADR-0008: ask from 5s before the gap, so nothing falls between the cracks
-MIN_GAP_MS = 5_000  # shorter interruptions aren't worth a request
 PROVIDER: Final = "ivr-logs"  # `backfill_runs.provider`, and the `source` of what it brings in
 STOPPED: Final = "stopped"  # the fill was asked to stop: a cancel, or the bot shutting down
 
@@ -74,20 +74,6 @@ class FillResult:
     @property
     def stopped(self) -> bool:
         return self.error == STOPPED
-
-
-def gaps_between(sessions: Sequence[tuple[int, int | None]]) -> list[tuple[int, int]]:
-    """`(from, to)` between each session's end and the next one's start, for sessions ordered by start.
-
-    The one rule both the bot's backfill and `scripts/coverage.py` go by.
-    """
-    found: list[tuple[int, int]] = []
-    for (_, ended_at), (next_start, _) in zip(sessions, sessions[1:], strict=False):
-        if ended_at is None:
-            continue  # an unclosed session is closed at startup (chatlog.close_stale_sessions)
-        if next_start - int(ended_at) >= MIN_GAP_MS:
-            found.append((int(ended_at), next_start))
-    return found
 
 
 async def find_gaps(conn: Connection, channel_id: str, channel_login: str) -> list[Gap]:

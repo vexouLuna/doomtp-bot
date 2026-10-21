@@ -13,8 +13,9 @@ from doomtp_bot.api.app import create_app
 from doomtp_bot.api.grammar import GRAMMAR_RULES
 from doomtp_bot.api.keys import ApiKeyService
 from doomtp_bot.api.routes import site
-from doomtp_bot.api.sessions import LOCAL_NETWORKS, AdminAuth, LoginLimiter, address_in, parse_networks
+from doomtp_bot.api.sessions import AdminAuth, LoginLimiter, address_in, parse_networks
 from doomtp_bot.clock import now_ms
+from doomtp_bot.config import LOCAL_NETWORKS
 from doomtp_bot.core.health import ComponentHealth, HealthRegistry, Status
 from doomtp_bot.customcmds.packs import PackService
 from doomtp_bot.customcmds.service import CustomCommandService
