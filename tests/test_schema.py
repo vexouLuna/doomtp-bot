@@ -1,8 +1,7 @@
-"""Alembic migrations (ADR-0022): every revision goes down and back up, and old databases are adopted."""
+"""Alembic migrations (ADR-0022): every revision goes down and back up, and the bot checks where it stands."""
 
 from __future__ import annotations
 
-from importlib import resources
 from typing import Any
 
 import psycopg
@@ -52,7 +51,7 @@ def _data_only(name: str, revision: str) -> bool:
 
 @pytest.mark.parametrize("name", schema.SCHEMAS)
 def test_revisions_are_numbered_in_one_line(name: str) -> None:
-    """Adoption compares revision ids as numbers (`schema._adopt`), so they stay NNNN and contiguous."""
+    """Revision ids are NNNN and contiguous, so a revision's number says where it is in the line."""
     revisions = _revisions(name)
     assert revisions == [f"{n:04d}" for n in range(1, len(revisions) + 1)]
     assert schema.head(name) == revisions[-1]
@@ -109,44 +108,17 @@ def test_the_shared_audit_table_leaves_the_bots_own_in_place(empty_database: str
     assert row == (True, True, True)
 
 
-def test_legacy_revisions_keep_schema_migrations_in_step(empty_database: str) -> None:
-    """An image from before ADR-0022 reads `schema_migrations`, so a downgrade has to update it."""
+def test_schema_migrations_is_gone_and_comes_back_going_down(empty_database: str) -> None:
+    """Bot 0018 and chatlog 0009 drop the pre-Alembic table; a downgrade past them rebuilds it as revisions
+    0001–0005 kept it, for an image from before ADR-0022."""
     schema.upgrade(empty_database)
+    with psycopg.connect(empty_database) as conn:
+        gone = conn.execute("SELECT to_regclass('bot.schema_migrations'), to_regclass('chatlog.schema_migrations')")
+        assert gone.fetchone() == (None, None)
     schema.downgrade(empty_database, {"bot": "0002"})
     with psycopg.connect(empty_database) as conn:
         rows = conn.execute("SELECT version, name FROM bot.schema_migrations ORDER BY 1").fetchall()
     assert rows == [(1, "0001_init.sql"), (2, "0002_quotes.sql")]
-
-
-def test_a_database_from_before_alembic_is_adopted(empty_database: str) -> None:
-    """The SQL runner's database: the tables of its last files (bot 0005, chatlog 0001), `schema_migrations` rows and no
-    `alembic_version`. Adopted there, it takes the later revisions like any other database."""
-    schema.upgrade(empty_database)
-    before = _catalog(empty_database)
-    schema.downgrade(empty_database, {"bot": "0005", "chatlog": "0001"})
-    with psycopg.connect(empty_database) as conn:
-        conn.execute("DROP TABLE bot.alembic_version")
-        conn.execute("DROP TABLE chatlog.alembic_version")
-    assert schema.current(empty_database) == {"bot": None, "chatlog": None}
-    assert schema.upgrade(empty_database) == schema.heads()
-    assert _catalog(empty_database) == before
-
-
-def test_an_old_image_that_migrated_forward_again_is_adopted(empty_database: str) -> None:
-    """After a rollback, an image from before ADR-0022 runs its own SQL runner and gets ahead of Alembic."""
-    schema.upgrade(empty_database)
-    schema.downgrade(empty_database, {"bot": "0003"})
-    sql = resources.files("doomtp_bot.storage") / "migrations" / "bot" / "sql"
-    with psycopg.connect(empty_database) as conn:  # what that runner does: the file, then its row
-        conn.execute("SET search_path TO bot, public")
-        for version, name in [
-            (4, "0004_more_variable_limits.sql"),
-            (5, "0005_internal_and_system_packs.sql"),
-        ]:
-            conn.execute((sql / name).read_text("utf-8").encode())
-            conn.execute("INSERT INTO schema_migrations (version, name) VALUES (%s, %s)", (version, name))
-    assert schema.current(empty_database)["bot"] == "0003"
-    assert schema.upgrade(empty_database) == schema.heads()
 
 
 async def test_the_bot_refuses_a_schema_behind_its_own(empty_database: str) -> None:
