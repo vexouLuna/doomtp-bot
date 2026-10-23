@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from doomtp_bot.api.app import create_app
-from doomtp_bot.core.capabilities import granted_by
+from doomtp_bot.channels.capabilities import granted_by
 from doomtp_bot.core.events import ChatMessage, Event
 from doomtp_bot.core.health import HealthRegistry
 from doomtp_bot.storage.db import Databases
@@ -245,7 +245,7 @@ async def test_oauth_flow_stores_token_and_notifies(dbs: Databases) -> None:
 
     tokens = TokenStore(dbs.bot)
     auth = TwitchAuth(client_id="cid", redirect_uri="http://localhost:8080/auth/callback", tokens=tokens,
-                      http=FakeOAuthHttp(), on_bot_authorized=on_authorized)  # fmt: skip
+                      http=FakeOAuthHttp(), on_bot_authorized=on_authorized, expected_bot_id="999")  # fmt: skip
     url = urlsplit(auth.login_url())
     query = parse_qs(url.query)
     assert url.netloc == "id.twitch.tv" and query["client_id"] == ["cid"]
@@ -264,7 +264,8 @@ async def test_oauth_flow_stores_token_and_notifies(dbs: Databases) -> None:
 
 
 async def test_oauth_rejects_missing_chat_scopes(dbs: Databases) -> None:
-    auth = TwitchAuth(client_id="cid", redirect_uri="r", tokens=TokenStore(dbs.bot), http=FakeOAuthHttp(["user:bot"]))
+    auth = TwitchAuth(client_id="cid", redirect_uri="r", tokens=TokenStore(dbs.bot), http=FakeOAuthHttp(["user:bot"]),
+                      expected_bot_id="999")  # fmt: skip
     state = parse_qs(urlsplit(auth.login_url()).query)["state"][0]
     with pytest.raises(OAuthError, match="user:read:chat"):
         await auth.complete("code", state)
@@ -279,8 +280,28 @@ async def test_oauth_rejects_wrong_account(dbs: Databases) -> None:
     assert await tokens.get() is None  # nothing stored for the wrong account
 
 
+async def test_without_a_bot_id_nobody_can_sign_in_as_the_bot(dbs: Databases) -> None:
+    """/auth/login needs no sign-in, so without TWITCH_BOT_ID any account finishing it would become the bot."""
+    tokens = TokenStore(dbs.bot)
+    http = FakeOAuthHttp()
+    http.user = {"user_id": "666", "login": "a_visitor"}
+    auth = TwitchAuth(client_id="cid", redirect_uri="r", tokens=tokens, http=http)
+    assert not auth.bot_flow_ready
+    state = parse_qs(urlsplit(auth.login_url()).query)["state"][0]
+    with pytest.raises(OAuthError, match="TWITCH_BOT_ID is not set"):
+        await auth.complete("code", state)
+    assert await tokens.get() is None
+
+    app = create_app(HealthRegistry(), auth)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        login = await client.get("/auth/login")
+        assert login.status_code == 503 and "TWITCH_BOT_ID" in login.text
+        assert (await client.get("/auth/connect")).status_code == 302  # broadcasters don't need it
+
+
 async def test_auth_routes(dbs: Databases) -> None:
-    auth = TwitchAuth(client_id="cid", redirect_uri="r", tokens=TokenStore(dbs.bot), http=FakeOAuthHttp())
+    auth = TwitchAuth(client_id="cid", redirect_uri="r", tokens=TokenStore(dbs.bot), http=FakeOAuthHttp(),
+                      expected_bot_id="999")  # fmt: skip
     app = create_app(HealthRegistry(), auth)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         login = await client.get("/auth/login")

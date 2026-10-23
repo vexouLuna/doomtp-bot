@@ -24,6 +24,8 @@ from doomtp_bot.runtime.preflight import preflight
 from doomtp_bot.runtime.registry import CommandRegistry
 from doomtp_bot.runtime.resolver import BuiltinResolver, CustomTarget, Resolver
 from doomtp_bot.runtime.result import Code, Result, error_result
+from doomtp_bot.runtime.services import Services
+from doomtp_bot.runtime.spec import LogLevel
 from doomtp_bot.runtime.values import UserResolver
 from doomtp_bot.runtime.variables import (
     AllowAllAccess,
@@ -58,6 +60,22 @@ class RunReport:
     ast: Node | None = None
 
 
+def should_log_run(report: RunReport, level: LogLevel) -> bool:
+    """Per-command log level (architecture §4.5)."""
+    code = report.result.code
+    if level is LogLevel.OFF:
+        return False
+    if level is LogLevel.ALL:
+        return True
+    if code in (Code.UNKNOWN, Code.COOLDOWN, Code.DENIED):
+        return False
+    if level is LogLevel.ERRORS:
+        return code != Code.OK
+    if level is LogLevel.OUTPUT:
+        return code != Code.OK or bool(report.send) or bool(report.committed)
+    return True
+
+
 def _record_executed(report: RunReport, scope: Scope) -> None:
     """What ran, and which of it came from a custom command."""
     report.executed = list(scope.executed)
@@ -90,7 +108,7 @@ class Runtime:
         resolve_user: UserResolver | None = None,
         callbacks: CallbackProvider | None = None,
         custom: CustomLoader | None = None,
-        services: dict[str, Any] | None = None,
+        services: Services | None = None,
         expr_timeout: float = EXPR_TIMEOUT_S,
     ) -> None:
         self.registry = registry
@@ -101,7 +119,8 @@ class Runtime:
         self.resolve_user = resolve_user
         self.callbacks = callbacks
         self.custom = custom
-        self.services: dict[str, Any] = {"registry": registry, "runtime": self, **(services or {})}
+        self.services = services or Services()
+        self.services.registry, self.services.runtime = registry, self
         self.expr_timeout = expr_timeout
         self.executor = Executor(self.policy)
 

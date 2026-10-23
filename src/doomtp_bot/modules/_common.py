@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from doomtp_bot.customcmds.resolution import is_custom as is_custom
 from doomtp_bot.customcmds.resolution import published_specs
 from doomtp_bot.lang.parser import DEFAULT_PREFIX, strip_prefix
+from doomtp_bot.modules.services import service, services
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.runtime.context import CommandContext
 from doomtp_bot.runtime.registry import CommandRegistry
@@ -28,7 +29,7 @@ def rank(ctx: CommandContext) -> int:
 
 
 def policy_of(ctx: CommandContext) -> PolicyService:
-    return ctx.service("policy")  # type: ignore[no-any-return]
+    return service(ctx, "policy")
 
 
 def need(values: list[str], count: int, usage: str) -> None:
@@ -40,7 +41,7 @@ def need(values: list[str], count: int, usage: str) -> None:
 def reject_filtered(ctx: CommandContext, *texts: str) -> None:
     """Text that gets stored is read out later — as a name, a usage line or a reply — so it goes through
     the channel's filter before it is saved (architecture §9, ADR-0009 item 4)."""
-    filters = ctx.exec.services.get("filters")
+    filters = services(ctx).filters
     hits = filters.rejects_any(ctx.channel.id, *texts) if filters is not None else []
     if hits:
         raise CommandError(f"the filter rejects that: {', '.join(hits)}")
@@ -54,7 +55,7 @@ def sign_of(ctx: CommandContext, channel_id: str) -> str:
     """The command sign to tell somebody to type in that channel — each one picks its own."""
     if channel_id == ctx.channel.id:
         return ctx.channel.prefix
-    policy = ctx.exec.services.get("policy")
+    policy = services(ctx).policy
     settings = policy.channel_settings(channel_id) if policy is not None else None
     return str(settings.prefix) if settings is not None else DEFAULT_PREFIX
 
@@ -70,12 +71,12 @@ async def user_arg(ctx: CommandContext, raw: str) -> dict[str, Any]:
 def command_spec(ctx: CommandContext, name: str) -> CommandSpec:
     """Look up a command by name or alias, with or without the channel prefix."""
     wanted = strip_prefix(name, ctx.channel.prefix).lower()
-    registry: CommandRegistry = ctx.service("registry")
+    registry: CommandRegistry = service(ctx, "registry")
     found = registry.get(wanted)
     if found is not None:
         return found.spec
     # A system pack's member (`false`, `default`) is a sentinel too, so `!cmd disable false` says so.
-    resolver: Resolver = ctx.service("runtime").resolver
+    resolver: Resolver = service(ctx, "runtime").resolver
     system = resolver.resolve_name(ctx.exec, wanted)
     if system is None or system.source != "system":
         raise CommandError(f"unknown command: {name}")
@@ -89,8 +90,8 @@ async def rule_spec(ctx: CommandContext, name: str) -> CommandSpec:
         return command_spec(ctx, name)
     except CommandError:
         pass
-    services = ctx.exec.services
-    found = await published_specs(ctx.channel.id, services.get("customcmds"), services.get("packs"))
+    bot = services(ctx)
+    found = await published_specs(ctx.channel.id, bot.customcmds, bot.packs)
     spec = found.get(strip_prefix(name, ctx.channel.prefix).lower())
     if spec is None:
         raise CommandError(f"unknown command: {name}")

@@ -100,26 +100,9 @@ def current(dsn: str) -> dict[str, str | None]:
         return {schema: _revision(conn, schema) for schema in SCHEMAS}
 
 
-def _adopt(dsn: str, schema: str) -> None:
-    """Stamp a database the numbered-SQL runner (ADR-0014) moved, at the revision its number matches.
-
-    That's a database from before Alembic, or one an image from before ADR-0022 migrated forward again
-    after a rollback: its `schema_migrations` is then ahead of `alembic_version`. Later revisions don't
-    touch `schema_migrations`, so it never gets ahead of them.
-    """
-    with _connect(dsn) as conn:
-        if not _exists(conn, schema, "schema_migrations"):
-            return
-        version = conn.execute(text(f'SELECT max(version) FROM "{schema}".schema_migrations')).scalar()
-        revision = _revision(conn, schema)
-    if version and (revision is None or int(version) > int(revision)):
-        command.stamp(config(schema, dsn), f"{int(version):04d}", purge=True)
-
-
 def upgrade(dsn: str, target: str = "head") -> dict[str, str | None]:
     """Bring both schemas to `target` (their heads by default). Safe to run again."""
     for schema in SCHEMAS:
-        _adopt(dsn, schema)
         command.upgrade(config(schema, dsn), target)
     return current(dsn)
 
@@ -127,7 +110,6 @@ def upgrade(dsn: str, target: str = "head") -> dict[str, str | None]:
 def downgrade(dsn: str, targets: dict[str, str]) -> dict[str, str | None]:
     """Take each named schema down to its target revision (`base` empties it)."""
     for schema, target in targets.items():
-        _adopt(dsn, schema)
         command.downgrade(config(schema, dsn), target)
     return current(dsn)
 
@@ -167,8 +149,8 @@ def run_sql(schema: str, name: str) -> None:
 
 
 def record_legacy(version: int, name: str) -> None:
-    """Keep `schema_migrations` in step with revisions 0001–0005, so an image from before ADR-0022 still
-    finds the version it expects after a downgrade."""
+    """Keep `schema_migrations` in step with revisions 0001–0005 (bot) and 0001 (chatlog), the way the SQL
+    runner before ADR-0022 left it. Bot 0018 and chatlog 0009 drop the table and, going down, rebuild it."""
     op.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations ("
         " version integer PRIMARY KEY, name text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())"

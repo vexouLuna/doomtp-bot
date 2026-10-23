@@ -12,9 +12,9 @@ from httpx import ASGITransport
 from doomtp_bot.api.app import create_app
 from doomtp_bot.api.keys import ApiKeyService
 from doomtp_bot.api.sessions import SESSION_COOKIE
+from doomtp_bot.channels.manager import ChannelManager
 from doomtp_bot.chatlog.writer import ChatLogWriter
 from doomtp_bot.clock import now_ms
-from doomtp_bot.core.channels import ChannelManager
 from doomtp_bot.core.health import ComponentHealth, HealthRegistry, Status
 from doomtp_bot.customcmds.packs import PackService
 from doomtp_bot.customcmds.resolution import CustomCommandLoader
@@ -22,6 +22,7 @@ from doomtp_bot.customcmds.service import CustomCommandService
 from doomtp_bot.filters.service import FilterService
 from doomtp_bot.history.backfill import BackfillService
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.runtime.engine import Runtime
@@ -96,7 +97,7 @@ async def app_and_keys(
         builtin_registry(),
         policy=policy,
         custom=CustomCommandLoader(customcmds, packs),
-        services={"policy": policy, "customcmds": customcmds, "packs": packs},
+        services=BotServices(policy=policy, customcmds=customcmds, packs=packs),
     )
     triggers.parser_params = runtime.parser_params
     triggers.everywhere = lambda name: runtime.registry.get(name) is not None

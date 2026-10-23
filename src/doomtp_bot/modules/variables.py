@@ -15,6 +15,7 @@ from doomtp_bot.lang.ast import Lit
 from doomtp_bot.lang.errors import ParseError
 from doomtp_bot.lang.parser import parse_var_ref
 from doomtp_bot.modules._common import rank, reject_filtered, user_arg
+from doomtp_bot.modules.services import service, services
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK
 from doomtp_bot.runtime import ops
 from doomtp_bot.runtime.context import Args, CommandContext
@@ -117,12 +118,12 @@ async def _publisher_space(ctx: CommandContext, ns: str, rest: list[str]) -> Spa
 
 
 def _var_admin(ctx: CommandContext) -> bool:
-    policy = ctx.exec.services.get("policy")
+    policy = services(ctx).policy
     return policy is not None and bool(policy.reaches_setting_role(ctx.exec, "var_admin_role"))
 
 
 def _store(ctx: CommandContext) -> PostgresVariableStore:
-    return ctx.service("variable_store")  # type: ignore[no-any-return]
+    return service(ctx, "variable_store")
 
 
 @command(
@@ -215,7 +216,7 @@ async def _var(ctx: CommandContext, v: list[str]) -> Result:
             raise CommandError("top needs a chatter")
         space_key = key_for(ctx.exec, ns, name)
         rows = await _store(ctx).top(ns, space_key.key1, space_key.key2, name, count)
-        resolve_login = ctx.exec.services.get("login_for")
+        resolve_login = services(ctx).login_for
         # All at once: a cold cache is a Helix call per row, and one after another a long board would
         # run past the command's stage timeout.
         logins = await asyncio.gather(*(resolve_login(uid) for uid, _ in rows)) if resolve_login else []

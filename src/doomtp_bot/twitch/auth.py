@@ -92,6 +92,9 @@ class TwitchOAuthHttp:
             return body
 
 
+BOT_ID_MISSING = "TWITCH_BOT_ID is not set"
+
+
 @dataclass(frozen=True, slots=True)
 class AuthorizedAccount:
     user_id: str
@@ -122,6 +125,11 @@ class TwitchAuth:
         self.on_broadcaster_authorized = on_broadcaster_authorized
         self.clock = clock
         self._states: dict[str, tuple[float, str]] = {}  # state -> (issued at, which flow)
+
+    @property
+    def bot_flow_ready(self) -> bool:
+        """Whether the bot account may sign in: only once TWITCH_BOT_ID says which account that is."""
+        return bool(self.expected_bot_id)
 
     def login_url(self) -> str:
         """Where the bot account signs in. One-time setup, by whoever runs the bot.
@@ -163,7 +171,10 @@ class TwitchAuth:
         info = await self.http.validate(token["access_token"])
         if found[1] == "broadcaster":
             return await self._store_broadcaster(token, info)
-        if self.expected_bot_id and info["user_id"] != self.expected_bot_id:
+        if not self.expected_bot_id:
+            # Without it, whoever finishes this flow would become the bot (/auth/login needs no sign-in).
+            raise OAuthError(f"{BOT_ID_MISSING}; set it to the bot account's user ID and start again")
+        if info["user_id"] != self.expected_bot_id:
             raise OAuthError(
                 f"signed in as {info.get('login')} ({info['user_id']}), but the bot account is"
                 f" {self.expected_bot_id}. Log out of Twitch and sign in as the bot account."

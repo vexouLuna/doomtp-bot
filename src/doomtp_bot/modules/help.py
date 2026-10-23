@@ -16,6 +16,7 @@ from doomtp_bot.customcmds import params as cc_params
 from doomtp_bot.customcmds.packs import PackService
 from doomtp_bot.customcmds.resolution import spec_for
 from doomtp_bot.lang.parser import strip_prefix
+from doomtp_bot.modules.services import service, services
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, CommandRegistry, command
@@ -31,7 +32,7 @@ HIDDEN_MODULES = frozenset({"core", "http"})  # http: only admins' commands can 
 
 def site_root(ctx: CommandContext) -> str | None:
     """The web site's home, with the docs and the language."""
-    site: str | None = ctx.exec.services.get("site_url")
+    site: str | None = services(ctx).site_url
     return f"{site.rstrip('/')}/" if site else None
 
 
@@ -42,7 +43,7 @@ def site_link(ctx: CommandContext) -> str | None:
 
 
 def _custom(ctx: CommandContext) -> CustomCommandService | None:
-    service: CustomCommandService | None = ctx.exec.services.get("customcmds")
+    service: CustomCommandService | None = services(ctx).customcmds
     return service
 
 
@@ -56,7 +57,7 @@ async def _custom_specs(ctx: CommandContext) -> dict[str, CommandSpec]:
         for publication, command_ in await service.publications_in(scope):
             if publication.status == "active" and command_.status == "active":
                 specs.setdefault(publication.name, spec_for(publication.name, command_, publication))
-    packs: PackService | None = ctx.exec.services.get("packs")
+    packs: PackService | None = services(ctx).packs
     if packs is not None:
         for pack_publication, pack in await packs.publications_in(ctx.channel.id, include_global=True):
             if pack_publication.status != "active":
@@ -72,8 +73,8 @@ async def _custom_specs(ctx: CommandContext) -> dict[str, CommandSpec]:
 async def _listing(ctx: CommandContext, link: str | None, how: str) -> Result:
     """`<how> <link>` alone when the site is set; otherwise `commands: …; custom: …`, the ones the caller can
     run here, cut to one chat message."""
-    registry: CommandRegistry = ctx.service("registry")
-    policy = ctx.service("runtime").policy
+    registry: CommandRegistry = service(ctx, "registry")
+    policy = service(ctx, "runtime").policy
     builtins = [
         c.spec.name
         for c in registry.all()
@@ -114,14 +115,14 @@ def _one_message(text: str) -> str:
     )
 )
 async def help_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result:
-    policy = ctx.service("runtime").policy
+    policy = service(ctx, "runtime").policy
     prefix = ctx.channel.prefix
     name = args.get("command")
     if not name:
         return await _listing(ctx, site_root(ctx), "docs at")
     wanted = strip_prefix(name, prefix).lower().removeprefix("@")
     # The runtime's own resolver: the built-ins and the system packs' sentinels (ADR-0019).
-    found = ctx.service("runtime").resolver.resolve_name(ctx.exec, wanted)
+    found = service(ctx, "runtime").resolver.resolve_name(ctx.exec, wanted)
     spec = found.spec if found is not None else (await _custom_specs(ctx)).get(wanted)
     if spec is None or not policy.is_permitted(ctx.exec, spec):
         return Result.failure(Code.NOT_FOUND, f"no command named {name}")

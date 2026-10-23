@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from doomtp_bot.api import deps
 from doomtp_bot.api.access import ADMIN_READ, ADMIN_WRITE, Caller
 from doomtp_bot.api.routes.commands import (
     PackRef,
@@ -25,22 +26,23 @@ from doomtp_bot.api.routes.commands import (
 from doomtp_bot.api.routes.data import (
     CommandRule,
     Enabled,
-    FilterBody,
-    FilterPatch,
     _ignored_json,
     _login_of,
     _module_specs,
     _policy,
-    _state,
-    add_filter_to,
     apply_command_rule,
     command_spec,
-    filter_json,
-    patch_filter_in,
-    remove_filter_from,
     reset_rule,
     rule_json,
     toggle_module,
+)
+from doomtp_bot.api.routes.filters import (
+    FilterBody,
+    FilterPatch,
+    add_filter_to,
+    filter_json,
+    patch_filter_in,
+    remove_filter_from,
 )
 from doomtp_bot.customcmds.resolution import system_specs
 from doomtp_bot.policy.roles import BOT_OWNER_RANK, GLOBAL
@@ -80,7 +82,7 @@ class AdminBody(BaseModel):
 @router.post("/admins", status_code=201)
 async def add_admin(request: Request, body: AdminBody, caller: Caller = ADMIN_WRITE) -> dict[str, Any]:
     _check_owner(request, caller)
-    user = await _state(request, "twitch").resolve_user(body.login.lstrip("@"))
+    user = await deps.twitch(request).resolve_user(body.login.lstrip("@"))
     if user is None:
         raise HTTPException(status_code=404, detail=f"no Twitch user named {body.login}")
     await _policy(request).mutate(lambda repo: repo.set_global_admin(user["id"], user["name"], True, caller.actor))
@@ -133,7 +135,7 @@ async def reset_global_module(request: Request, module: str, caller: Caller = AD
 
 @router.get("/global/commands")
 async def global_commands(request: Request, caller: Caller = ADMIN_READ) -> dict[str, Any]:
-    policy, runtime = _policy(request), _state(request, "runtime")
+    policy, runtime = _policy(request), deps.runtime(request)
     specs = [c.spec for c in runtime.registry.all()] + system_specs(runtime.resolver)
     return {"commands": [rule_json(policy, GLOBAL, spec) for spec in specs]}
 
@@ -159,7 +161,7 @@ async def reset_global_command(request: Request, name: str, caller: Caller = ADM
 # ── bot-wide word filter ────────────────────────────────────────────────────
 @router.get("/global/filters")
 async def global_filters(request: Request, caller: Caller = ADMIN_READ) -> dict[str, Any]:
-    entries = {e.id: e for e in _state(request, "filters").entries_for(GLOBAL)}  # it lists GLOBAL twice
+    entries = {e.id: e for e in deps.filters(request).entries_for(GLOBAL)}  # it lists GLOBAL twice
     return {"filters": [filter_json(e) for _, e in sorted(entries.items())]}
 
 

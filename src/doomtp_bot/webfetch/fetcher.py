@@ -13,7 +13,6 @@ import dataclasses
 import json
 import socket
 import time
-from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -24,6 +23,7 @@ from aiohttp.abc import AbstractResolver, ResolveResult
 from yarl import URL
 
 from doomtp_bot import __version__
+from doomtp_bot.ratelimit import SlidingWindow
 from doomtp_bot.runtime.result import Code, ErrorCode
 from doomtp_bot.webfetch.addresses import is_ip_literal, matching_pattern, refused
 
@@ -141,24 +141,17 @@ class CheckedResolver(AbstractResolver):
 
 
 class _Window:
-    """Requests in the last minute, per key."""
+    """Requests in the last minute, per key, against a limit an admin can change at any time."""
 
     def __init__(self, limit: int, clock: Callable[[], float]) -> None:
         self.limit = limit
-        self.clock = clock
-        self.hits: dict[str, deque[float]] = {}
+        self.requests = SlidingWindow(60.0, clock)
 
     def full(self, key: str) -> bool:
-        hits = self.hits.get(key)
-        if hits is None:
-            return self.limit <= 0  # a limit of 0 turns requests off
-        cutoff = self.clock() - 60.0
-        while hits and hits[0] <= cutoff:
-            hits.popleft()
-        return len(hits) >= self.limit
+        return self.requests.count(key) >= self.limit  # a limit of 0 turns requests off
 
     def add(self, key: str) -> None:
-        self.hits.setdefault(key, deque()).append(self.clock())
+        self.requests.add(key)
 
 
 class HttpFetcher:

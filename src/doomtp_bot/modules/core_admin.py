@@ -15,6 +15,7 @@ from doomtp_bot.lang import SYNTAX_VERSION
 from doomtp_bot.lang.errors import ParseError
 from doomtp_bot.lang.parser import DEFAULT_PREFIX, Context, parse, parse_template
 from doomtp_bot.modules._common import actor, is_custom, need, policy_of, rank, reject_filtered, rule_spec, user_arg
+from doomtp_bot.modules.services import service, services
 from doomtp_bot.policy.repository import PolicyRepository
 from doomtp_bot.policy.roles import (
     BOT_ADMIN_RANK,
@@ -49,7 +50,7 @@ PREFIX_FORBIDDEN = set('{}"\\|&>()')
 
 
 def _registry(ctx: CommandContext) -> CommandRegistry:
-    return ctx.service("registry")  # type: ignore[no-any-return]
+    return service(ctx, "registry")
 
 
 def _is_broadcaster(ctx: CommandContext) -> bool:
@@ -263,8 +264,8 @@ CMD_USAGE = "cmd enable|disable|reset <command> [global] | log <command> <off|er
 async def _pack_modules(ctx: CommandContext) -> dict[str, CommandSpec]:
     """Pack names usable with !module here (this channel's packs and global ones), and `custom` when
     anything is published one by one."""
-    services = ctx.exec.services
-    found = await custom_modules(ctx.channel.id, services.get("packs"), services.get("customcmds"))
+    bot = services(ctx)
+    found = await custom_modules(ctx.channel.id, bot.packs, bot.customcmds)
     return {name: CommandSpec(name="", module=name, summary="") for name in found}
 
 
@@ -454,7 +455,7 @@ async def _admin_limit(ctx: CommandContext, v: list[str]) -> Result:
     limit = _LIMITS[v[0].lower()]
     field, what = limit.column, limit.label
     need(v, 2, ADMIN_USAGE)
-    store = ctx.service("variable_store")
+    store = service(ctx, "variable_store")
     target = v[1].lower()
     if target == "default":
         kind, owner_id, label, rest = "*", "*", "default", v[2:]
@@ -492,7 +493,7 @@ def _show_host(entry: HostEntry) -> str:
 async def _admin_http(ctx: CommandContext, v: list[str]) -> Result:
     """`!admin http …`: the hosts `http get` may fetch, their secrets and the limits (ADR-0020). A secret's
     value is set only through the admin API: a chat line is public and kept in the chat log."""
-    hosts: HostStore = ctx.service("http_hosts")
+    hosts: HostStore = service(ctx, "http_hosts")
     need(v, 2, ADMIN_HTTP_USAGE)
     action, rest, who = v[1].lower(), v[2:], actor(ctx)
     try:
@@ -572,7 +573,7 @@ async def _callback(ctx: CommandContext, v: list[str], args: Args) -> Result:
         return Result.success(f"cleared {kind} for {scope}")
     if action != "set" or not args.raw_tail:
         raise CommandError(f"usage: {CALLBACK_USAGE}")
-    runtime = ctx.service("runtime")
+    runtime = service(ctx, "runtime")
     try:
         parse(args.raw_tail, Context.CALLBACK, runtime.parser_params(ctx.channel.prefix))
     except ParseError as exc:

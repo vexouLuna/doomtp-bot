@@ -14,6 +14,7 @@ from doomtp_bot.customcmds.service import CustomCommandError, CustomCommandServi
 from doomtp_bot.filters.service import FilterService
 from doomtp_bot.lang.parser import Context
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.runtime.engine import RunReport, Runtime
 from doomtp_bot.runtime.result import Code, ErrorCode
@@ -92,12 +93,12 @@ async def h(dbs: Databases) -> AsyncIterator[Harness]:
         access=access,
         resolve_user=resolve_user,
         custom=CustomCommandLoader(service),
-        services={
-            "policy": policy,
-            "variable_store": store,
-            "customcmds": service,
-            "variable_access": access,
-        },
+        services=BotServices(
+            policy=policy,
+            variable_store=store,
+            customcmds=service,
+            variable_access=access,
+        ),
     )
     yield Harness(dbs, policy, service, store, access, runtime)
 

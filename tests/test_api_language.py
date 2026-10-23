@@ -11,6 +11,7 @@ from httpx import ASGITransport
 from doomtp_bot.api.app import create_app
 from doomtp_bot.core.health import HealthRegistry
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.runtime.engine import Runtime
 from doomtp_bot.storage.db import Databases
 from tests.fakes import policy_with_channels
@@ -21,7 +22,7 @@ CHANNEL_ID, CHANNEL_LOGIN = "100", "doomtp"
 @pytest.fixture
 async def client(dbs: Databases) -> AsyncIterator[httpx.AsyncClient]:
     policy = await policy_with_channels(dbs.bot, (CHANNEL_ID, CHANNEL_LOGIN))
-    runtime = Runtime(builtin_registry(), policy=policy, services={"policy": policy})
+    runtime = Runtime(builtin_registry(), policy=policy, services=BotServices(policy=policy))
     app = create_app(HealthRegistry(), None, runtime=runtime, policy=policy)
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
         yield http
@@ -132,7 +133,7 @@ async def test_explain_as_another_user_needs_an_admin_session_or_a_key(dbs: Data
             return {"id": "300", "name": login, "display": login} if login == "mod" else None
 
     policy = await policy_with_channels(dbs.bot, (CHANNEL_ID, CHANNEL_LOGIN))
-    runtime = Runtime(builtin_registry(), policy=policy, services={"policy": policy})
+    runtime = Runtime(builtin_registry(), policy=policy, services=BotServices(policy=policy))
     app = create_app(
         HealthRegistry(),
         None,

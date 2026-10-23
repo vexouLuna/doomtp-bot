@@ -29,6 +29,27 @@ A multi-channel Twitch chat bot written in Python, self-hosted on a homelab in a
 | [ADR-0013](adr/0013-deploy-by-pulling-a-published-image.md) | CI publishes the image; the server pulls it on a timer |
 | [ADR-0014](adr/0014-storage-postgres-one-database-two-schemas.md) | **Postgres**: one database, a `bot` schema and a `chatlog` schema (supersedes ADR-0003) |
 | [ADR-0015](adr/0015-metrics-prometheus-text-on-the-api.md) | Metrics: counters in Prometheus text on `/metrics`, no new dependency |
+| [ADR-0016](adr/0016-web-ui-as-a-separate-site-over-the-json-api.md) | The web UI moves to a separate site over the JSON API |
+| [ADR-0017](adr/0017-moderator-sessions-through-twitch-sign-in.md) | Moderator sessions through Twitch sign-in |
+| [ADR-0018](adr/0018-command-language-v2-expressions-brackets-error-codes.md) | Command language v2 — `$` fields, brackets, expressions and numbered errors |
+| [ADR-0019](adr/0019-default-command-set.md) | The default command set, bot-owned packs and storage limits |
+| [ADR-0020](adr/0020-gated-http-query-primitive.md) | A gated HTTP query primitive |
+| [ADR-0021](adr/0021-integrate-on-dev-release-to-main.md) | Integrate on dev, release to main |
+| [ADR-0022](adr/0022-alembic-migrations-with-a-migrate-step.md) | Alembic migrations, run by a migrate step before the bot |
+| [ADR-0023](adr/0023-shared-sign-in-through-vexoulz-auth.md) | Shared sign-in through vexoulz-auth |
+| [ADR-0024](adr/0024-raw-events-and-ivr-logs-backfill.md) | Keep every event as Twitch sent it, and backfill older gaps from logs.ivr.fi |
+| [ADR-0025](adr/0025-chat-log-timeline-api.md) | The chat log as a paged timeline on the API |
+| [ADR-0026](adr/0026-web-access-mirrors-chat-rank.md) | Web access mirrors chat rank |
+| [ADR-0027](adr/0027-shared-jobs-api-and-audit-through-vex-platform.md) | Shared jobs, API and audit through vex-platform |
+| [ADR-0028](adr/0028-chat-watchers-and-the-pyramid-pack.md) | Chat watchers, and emote pyramids as a pack |
+| [ADR-0029](adr/0029-pack-triggers.md) | Pack triggers |
+| [ADR-0030](adr/0030-view-as-preview-header.md) | *(superseded by ADR-0036)* View as, scoped on the server |
+| [ADR-0031](adr/0031-trigger-cooldowns.md) | Trigger cooldowns |
+| [ADR-0032](adr/0032-triggers-on-your-own-packs.md) | Triggers on your own packs |
+| [ADR-0033](adr/0033-pack-member-ranks.md) | Ranks on pack members |
+| [ADR-0034](adr/0034-bot-event-triggers.md) | Triggers on the bot's own events |
+| [ADR-0035](adr/0035-twitch-user-lookup-for-chat-cards.md) | A Twitch user lookup for the sites' chat user cards |
+| [ADR-0036](adr/0036-remove-the-view-as-preview.md) | Remove the View as preview |
 
 ---
 
@@ -91,7 +112,7 @@ flowchart TB
     ES --> ADP["twitch/ adapter<br/>map · dedupe by message_id"]
     RM -.-> HIST["history/<br/>gap detect · IRC parse · backfill"]
 
-    ADP --> DISP{{"core/dispatch<br/>one ordered pass per event"}}
+    ADP --> DISP{{"app/dispatch<br/>one ordered pass per event"}}
     HIST -.-> DISP
 
     DISP --> LOG["chatlog/ writer<br/>batched, never blocks"]
@@ -638,7 +659,7 @@ A **race window** remains: a mod can act after the message has already been sent
 **API keys** (`api/keys.py`) are 32 random bytes with a `dtb_` prefix, stored only as a SHA-256 — random keys need no password hashing, since there is nothing to guess. They are created and revoked with an admin session through `/api/v1/keys` (the web admin), and the key is in the response that creates it and nowhere else. Two scopes: `read` and `write`. A session cookie also authenticates, but a cookie-authenticated *write* must carry the session's CSRF token in `X-CSRF-Token`, because browsers send cookies whether or not the page meant to.
 | `GET /api/v1/channels/{login}/log`, `/log/coverage` | **Now** | The channel's moderators, or anyone while its `public_log` and `log_enabled` are on, a limited number of reads a minute per address and without moderation events (ADR-0025, ADR-0026); removed messages are in for them too, flagged, while `/messages` leaves them out. The log as one timeline of messages, notifications and moderation events in time order, a keyset page at a time (`next` → `cursor`), newest first or oldest first, narrowed by window, kind, chatter (old logins too), search or `hide_removed`. Messages carry their moderation flags and the command run that links a command to the bot's reply; a notification carries the chatter's own message (`fragments`, `badges`, `color`), as a resub's is shown under its system line; v2's `raw=true` adds each entry's row as stored (EventSub's event, the IRC line, or a legacy rebuild). `/coverage` lists the sessions and gaps in a window and the backfill that filled each. The web site's log viewer and the VOD archive's chat replay both read it. |
 | `/api/v1/session`, `/api/v1/keys` | **Now** | The admin login and API keys as JSON, for a UI served from elsewhere on the same host (ADR-0016). A session has a `role`: the password is an admin; a Twitch sign-in (ADR-0017, `/auth/admin/login`) is an admin for a bot owner or bot admin, a moderator of the channels it lists, or a user who manages none (ADR-0026). `channel_roles` and `channel_ranks` say why and how far it manages each channel, and `own_channel` whether the bot is in the user's own. Its writes are audited as `via="web"` under the user's id. Keys are for admins. The CSRF token comes from `GET /session`, and `twitch_login` there says whether the Twitch sign-in is set up. Keys are managed with a session only, never with a key. Failed logins are limited per client address; behind a proxy, `WEB_FORWARDED_ALLOW_IPS` names the proxies whose forwarded address is believed. |
-| `X-View-As` request header | **Now** | An admin session previews the API as another viewer (ADR-0030): `signed-out`, `user`, `moderator@<channel>`, `broadcaster@<channel>` or `<rank>@<channel>` for a custom role ranked 1-99. Reads, `GET /session` included (it adds `view_as`), are answered as that viewer's own session would get them; every write is refused with 403. Previewing someone signed out, a private read is a 401 that carries `X-View-As: signed-out`. From any other caller the header is refused (403 from a session, 400 with a key). |
+| `X-View-As` request header | **Removed** | The admin preview of ADR-0030 was taken out by ADR-0036. A request that still carries the header gets 400, so a site that thinks it is previewing never acts as the admin. |
 | `GET /api/v1/site`, `/site/channels/{login}`, `/roles`, `/grammar`, `/explain/{token}`, `/packs`, `/channels/{login}/packs` | **Now** | Public, and only what the public pages print: the joined channels, one channel's sign, tier and status, the built-in roles, the grammar, a chat-linked explain report, published packs, each member marked `internal` when only its pack's own commands can call it (ADR-0016) |
 | `GET /api/v1/stats`, `/channels/{login}/stats` | **Now** | Public. The bot's version, the tag or branch and commit its image was built from (`build-info/`, written by CI; `core/build.py`), when it started, the joined channels, and the chat lines logged and sent over the last minute, hour and day and the day's runs by outcome, there or in one channel (`chatlog/stats.py`). Kept 30 seconds. `$bot.release`, `$bot.commit` and `$bot.uptime` read the same build info. |
 | `GET /api/v1/channels/{login}/modules`, `/ignored`; `POST /ignored`, `DELETE /ignored/{user_id}` | **Now** | API key, admin session or the channel's moderators. `DELETE /modules/{module}` goes back to inheriting. Modules include the packs a channel can use and `custom` (commands published one by one), each with the `enabled` chat would apply. Ignored users come with who ignored them, when and why; adding and removing them is audited like `ignore` in chat. `everywhere` (the bot-wide list) is for admins |
@@ -704,17 +725,20 @@ Everything here is built (✔):
 
 ```
 src/doomtp_bot/
-├─ __main__.py  config.py  clock.py                                        ✔ wiring, settings, now_ms
-├─ core/        events.py dispatch.py channels.py outbox.py health.py      ✔ dispatch calls each step directly
+├─ __main__.py  config.py  clock.py  scopes.py  ratelimit.py              ✔ entry point, settings, now_ms, GLOBAL, sliding windows
+├─ app/         bot.py dispatch.py                                         ✔ the wiring, start and shutdown; dispatch calls each step directly
+├─ core/        events.py outbox.py health.py links.py build.py            ✔ leaf pieces: nothing here imports the packages above
 │               metrics.py                                                 ✔ ADR-0015 counters
-│               instance_lock.py capabilities.py streams.py                ✔ ADR-0007 probe and stream poller
+│               instance_lock.py streams.py schedule.py bot_events.py      ✔ stream poller, ADR-0034 events
+├─ channels/    manager.py capabilities.py                                 ✔ ADR-0007 joining and the capability probe
 ├─ twitch/      client.py mapping.py auth.py tokens.py    # only place importing twitchio  ✔
-├─ history/     provider.py backfill.py queue.py irc_parse.py              ✔ ADR-0008, ADR-0024
-├─ chatlog/     writer.py queries.py timeline.py                           ✔ writes; the shared reads (search); the paged log
+├─ history/     provider.py backfill.py queue.py                           ✔ ADR-0008, ADR-0024
+├─ chatlog/     writer.py queries.py timeline.py gaps.py                   ✔ writes; the shared reads (search); the paged log
+│               irc_parse.py irc_convert.py events.py                      ✔ stored IRC lines in EventSub's terms
 ├─ moderation/  index.py automod.py                                        ✔
 ├─ lang/        parser.py (PEG, spec App. C) ast.py errors.py              ✔ syntax (versioned)
 ├─ runtime/     engine.py resolver.py preflight.py executor.py result.py   ✔
-│               context.py values.py variables.py namespaces.py output.py policy.py spec.py registry.py explain.py
+│               context.py values.py variables.py namespaces.py output.py policy.py spec.py registry.py explain.py services.py
 ├─ policy/      service.py repository.py snapshot.py roles.py cooldowns.py ✔ one service, not a file per concern
 ├─ customcmds/  service.py resolution.py packs.py params.py                ✔ ADR-0009, ADR-0012
 ├─ variables/   store.py access.py                                         ✔
@@ -727,9 +751,11 @@ src/doomtp_bot/
 ├─ modules/     core.py core_admin.py channels.py help.py basic.py         ✔ built-in command groups
 │               variables.py customcmds.py filters.py automod.py triggers.py explain.py _common.py
 │               moderation.py logsearch.py                                 ✔ timeout, ban, shoutout, chat modes, pins… (§4.3); log search
+│               services.py                                                ✔ BotServices: what the commands reach, typed
 │               httpget.py                                                 ✔ `http get`, only in bot admins' commands (ADR-0020)
 └─ api/         app.py keys.py sessions.py access.py grammar.py            ✔ no pages: those are doomtp-web's (ADR-0016)
-                routes/ (health auth language data session site)          ✔
+                routes/ (health auth language session site data backfill  ✔ data: channels, modules,
+                filters triggers variables http_hosts log commands manage bot)   commands, publications
                 static/editor/editor.js                                    ✔ the built editor bundle, committed
                 static/editor/tokens.js                                    ✔ its lexer alone, as an ES module, committed
                 static/grammar/*.svg                                       ✔ the railroad diagrams, committed

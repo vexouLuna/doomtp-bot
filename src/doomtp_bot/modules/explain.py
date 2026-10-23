@@ -8,6 +8,7 @@ explained without the command sign gets one: `!explain echo hi` explains `!echo 
 from __future__ import annotations
 
 from doomtp_bot.lang.parser import Context, after_prefix
+from doomtp_bot.modules.services import service, services
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.explain import explain
 from doomtp_bot.runtime.registry import Command, command
@@ -57,14 +58,14 @@ async def explain_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> 
         raw = ctx.channel.prefix + raw  # typing the sign twice is awkward; a line is a command anyway
 
     report = await explain(
-        ctx.service("runtime"),
+        service(ctx, "runtime"),
         raw,
         ctx.exec,
         context=context,
         run="--run" in flags,
     )
     summary, data = report.one_line(), report.as_dict()
-    reports = ctx.exec.services.get("explain_reports")
+    reports = services(ctx).explain_reports
     if reports is not None and reports.base_url:  # only when chat readers can open the page (§4.4)
         link = reports.link(reports.keep({**data, "channel": ctx.channel.login}))
         summary, data = f"{summary}; full report: {link}", {**data, "report_url": link}

@@ -6,10 +6,10 @@ import json
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from doomtp_bot.chatlog.irc_parse import parse_line
 from doomtp_bot.core.events import ChatMessage
 from doomtp_bot.history.backfill import BackfillService, Gap, to_events
 from doomtp_bot.history.enrich import Enricher
-from doomtp_bot.history.irc_parse import parse_line
 from doomtp_bot.history.provider import HistoryResponse
 from doomtp_bot.storage.db import Connection, Databases
 from tests.test_history import CHANNEL_ID, CHANNEL_LOGIN, FakeProvider, backfill_for

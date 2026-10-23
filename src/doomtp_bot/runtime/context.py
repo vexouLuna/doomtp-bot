@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from doomtp_bot.lang.parser import DEFAULT_PREFIX, Context
+from doomtp_bot.runtime.services import Services
 from doomtp_bot.runtime.values import UserResolver
 from doomtp_bot.runtime.variables import ANY, DeclaredVariables
 
@@ -102,7 +103,7 @@ class ExecContext:
     in_callback: bool = False  # callbacks never trigger other callbacks
     # `!explain --run`: evaluate, but commit no writes, no cooldowns, and send nothing (spec §9).
     dry_run: bool = False
-    services: dict[str, Any] = field(default_factory=dict)  # e.g. "policy", "variables_admin", "twitch"
+    services: Services = field(default_factory=Services)
     is_cancelled: Callable[[], bool] = lambda: False
     rng: random.Random = field(default_factory=random.Random)
     clock: Callable[[], float] = time.time
@@ -167,9 +168,3 @@ class CommandContext:
 
     def ensure_not_cancelled(self) -> None:
         self.exec.ensure_not_cancelled()
-
-    def service(self, name: str) -> Any:
-        try:
-            return self.exec.services[name]
-        except KeyError:
-            raise RuntimeError(f"service {name!r} is not configured") from None

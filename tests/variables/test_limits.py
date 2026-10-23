@@ -12,6 +12,7 @@ import pytest
 
 from doomtp_bot.lang.parser import Context
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.runtime.context import ExecContext
 from doomtp_bot.runtime.engine import RunReport, Runtime
@@ -74,7 +75,7 @@ async def h(dbs: Databases) -> AsyncIterator[Harness]:
         store=store,
         access=access,
         resolve_user=resolve_user,
-        services={"policy": policy, "variable_store": store},
+        services=BotServices(policy=policy, variable_store=store),
     )
     yield Harness(store, policy, runtime)
 

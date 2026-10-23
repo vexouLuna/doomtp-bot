@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from doomtp_bot.history.irc_parse import IrcLine
+from doomtp_bot.chatlog.irc_parse import IrcLine
 
 ACTION_START, ACTION_END = "\x01ACTION ", "\x01"
 

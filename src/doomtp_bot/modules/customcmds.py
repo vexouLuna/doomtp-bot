@@ -29,6 +29,7 @@ from doomtp_bot.modules.automation import (
     timer_schedule,
     trigger_what,
 )
+from doomtp_bot.modules.services import service, services
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK, GLOBAL
 from doomtp_bot.runtime.context import Args, CommandContext, Publisher
 from doomtp_bot.runtime.executor import ScopeArgs, UsageError
@@ -68,24 +69,24 @@ GRANTABLE = ("channel", "channel.chatter")
 
 
 def _service(ctx: CommandContext) -> CustomCommandService:
-    return ctx.service("customcmds")  # type: ignore[no-any-return]
+    return service(ctx, "customcmds")
 
 
 def _access(ctx: CommandContext) -> VariableAccessPolicy:
-    return ctx.service("variable_access")  # type: ignore[no-any-return]
+    return service(ctx, "variable_access")
 
 
 def _packs(ctx: CommandContext) -> PackService:
-    return ctx.service("packs")  # type: ignore[no-any-return]
+    return service(ctx, "packs")
 
 
 def _triggers(ctx: CommandContext) -> TriggerService:
-    return ctx.service("triggers")  # type: ignore[no-any-return]
+    return service(ctx, "triggers")
 
 
 def _trigger_keys(ctx: CommandContext, pack: Pack) -> list[str]:
     """The pack's own triggers (ADR-0032), where the trigger service runs."""
-    triggers: TriggerService | None = ctx.exec.services.get("triggers")
+    triggers: TriggerService | None = services(ctx).triggers
     return [t.pack_key for t in triggers.pack_triggers(pack.id)] if triggers is not None else []
 
 
@@ -576,7 +577,7 @@ async def _unlink(ctx: CommandContext, v: list[str], args: Args) -> Result:
 
 def _channel_writes(ctx: CommandContext, custom: CustomCommand) -> list[str]:
     """The channel variables a body writes. Published, it can't write them without a grant (ADR-0010)."""
-    runtime: Runtime = ctx.service("runtime")
+    runtime: Runtime = service(ctx, "runtime")
     try:
         node = parse(custom.body, Context.BODY, runtime.parser_params(ctx.channel.prefix))
     except ParseError:
@@ -750,7 +751,7 @@ async def _run(ctx: CommandContext, v: list[str], args: Args) -> Result:
     if command.owner_user_id != user_id and not command.shareable:
         raise CommandError(f"{command.id} isn't shared", Code.DENIED)
 
-    runtime: Runtime = ctx.service("runtime")
+    runtime: Runtime = service(ctx, "runtime")
     values = tuple(v[2:])
     body_ctx = runtime.make_context(
         channel=ctx.channel,
