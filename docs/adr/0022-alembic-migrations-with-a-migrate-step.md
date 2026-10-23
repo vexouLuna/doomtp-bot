@@ -1,6 +1,6 @@
 # ADR-0022: Alembic migrations, run by a migrate step before the bot
 
-**Status:** Accepted — 2026-09-28
+**Status:** Accepted — 2026-09-28; amended 2026-10-23 (the pre-Alembic bridge is retired, see the end)
 **Date:** 2026-09-28
 **Deciders:** Project owner
 
@@ -107,3 +107,12 @@ are safest anyway.
      lock, and a tick between the downgrade and the restart would run the migrate step and upgrade again.*
    - *The `quotes` table was empty, so a downgrade moving real quotes back out of `channel.quotes` is still
      proven only by the CI downgrade test.)*
+
+## Amendment (2026-10-23): the pre-Alembic bridge is retired
+
+Every deployment has run an Alembic image for weeks, so the two pieces that served databases and images
+from before this decision go. `doomtp-bot db upgrade` no longer stamps a database that has
+`schema_migrations` and no `alembic_version`. Such a database must first be upgraded by an image from
+v0.19.x. Revisions bot 0018 and chatlog 0009 drop `schema_migrations`. Their downgrades rebuild it as
+revisions 0001–0005 kept it, so a rollback past them still leaves what an older image expects. Revisions
+0001–0005 themselves are unchanged: databases have already applied them.

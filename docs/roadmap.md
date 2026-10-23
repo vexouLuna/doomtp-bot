@@ -141,4 +141,5 @@ psycopg in place of aiosqlite, and full-text search on a `tsvector` column inste
 4. **Turn on the commands that need a grant or an admin**, now that v0.3.0 installed `core`, `starter`
    and `quotes`. `!cc grant deaths channel.deaths` in each channel that wants `!deaths`. For
    `!weather`, `!admin add` the bot account and `!admin http allow wttr.in`.
-   If custom commands were stored before the server took v0.2.0, run `scripts/migrate_v2.py` once too.
+   (Custom commands stored before v0.2.0 were rewritten to language 2.0 by `scripts/migrate_v2.py`; the
+   script was removed on 2026-10-23, after every deployment had run it.)
