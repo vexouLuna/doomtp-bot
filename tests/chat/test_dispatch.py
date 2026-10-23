@@ -23,6 +23,7 @@ from doomtp_bot.history.backfill import BackfillService
 from doomtp_bot.lang.parser import DEFAULT_PREFIX
 from doomtp_bot.moderation.index import ModerationIndex
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.policy.service import PolicyService
@@ -136,19 +137,19 @@ async def h(dbs: Databases, make_backfill_jobs: MakeBackfillJobs) -> AsyncIterat
         callbacks=policy,
         resolve_user=twitch.resolve_user,
         custom=CustomCommandLoader(commands),
-        services={
-            "policy": policy,
-            "twitch": twitch,
-            "customcmds": commands,
-            "connect_url": CONNECT_URL,
-            "history": SimpleNamespace(base_url="https://history.example/api"),
-            "backfill": await make_backfill_jobs(
+        services=BotServices(
+            policy=policy,
+            twitch=twitch,
+            customcmds=commands,
+            connect_url=CONNECT_URL,
+            history=SimpleNamespace(base_url="https://history.example/api"),
+            backfill=await make_backfill_jobs(
                 BackfillService(conn=dbs.chatlog, writer=writer, provider=FakeProvider(), policy=policy)
             ),
-        },
+        ),
     )
     channels = ChannelManager(policy, twitch, writer, default_prefix="!")  # emoji default: see below
-    runtime.services["channels"] = channels
+    runtime.services.channels = channels
     moderation = ModerationIndex()
     outbox = Outbox(
         twitch,

@@ -738,7 +738,7 @@ src/doomtp_bot/
 ├─ moderation/  index.py automod.py                                        ✔
 ├─ lang/        parser.py (PEG, spec App. C) ast.py errors.py              ✔ syntax (versioned)
 ├─ runtime/     engine.py resolver.py preflight.py executor.py result.py   ✔
-│               context.py values.py variables.py namespaces.py output.py policy.py spec.py registry.py explain.py
+│               context.py values.py variables.py namespaces.py output.py policy.py spec.py registry.py explain.py services.py
 ├─ policy/      service.py repository.py snapshot.py roles.py cooldowns.py ✔ one service, not a file per concern
 ├─ customcmds/  service.py resolution.py packs.py params.py                ✔ ADR-0009, ADR-0012
 ├─ variables/   store.py access.py                                         ✔
@@ -751,6 +751,7 @@ src/doomtp_bot/
 ├─ modules/     core.py core_admin.py channels.py help.py basic.py         ✔ built-in command groups
 │               variables.py customcmds.py filters.py automod.py triggers.py explain.py _common.py
 │               moderation.py logsearch.py                                 ✔ timeout, ban, shoutout, chat modes, pins… (§4.3); log search
+│               services.py                                                ✔ BotServices: what the commands reach, typed
 │               httpget.py                                                 ✔ `http get`, only in bot admins' commands (ADR-0020)
 └─ api/         app.py keys.py sessions.py access.py grammar.py            ✔ no pages: those are doomtp-web's (ADR-0016)
                 routes/ (health auth language session site data backfill  ✔ data: channels, modules,

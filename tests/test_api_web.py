@@ -21,6 +21,7 @@ from doomtp_bot.customcmds.packs import PackService
 from doomtp_bot.customcmds.service import CustomCommandService
 from doomtp_bot.filters.service import FilterService
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.roles import BUILTIN_RANKS, GLOBAL
 from doomtp_bot.runtime.engine import Runtime
@@ -53,7 +54,7 @@ async def app(dbs: Databases) -> AsyncIterator[Any]:
     yield create_app(
         health,
         None,
-        runtime=Runtime(builtin_registry(), policy=policy, services={"policy": policy}),
+        runtime=Runtime(builtin_registry(), policy=policy, services=BotServices(policy=policy)),
         policy=policy,
         services={
             "customcmds": customcmds,

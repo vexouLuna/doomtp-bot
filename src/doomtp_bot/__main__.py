@@ -43,6 +43,7 @@ from doomtp_bot.log import configure_logging
 from doomtp_bot.moderation.automod import AutoMod
 from doomtp_bot.moderation.index import ModerationIndex
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.roles import MODERATOR_RANK
 from doomtp_bot.policy.service import PolicyService
@@ -163,26 +164,26 @@ async def run(settings: Settings) -> None:
     await jobs.open()
     backfill_queue = BackfillJobs(backfill, jobs)  # `!backfill` and the API queue jobs (ADR-0024 §5)
     await backfill_queue.adopt_legacy()  # what an image from before ADR-0027 left queued
-    services: dict[str, object] = {
-        "policy": policy,
-        "variable_store": store,
-        "channels": channels,
-        "customcmds": customcmds,
-        "packs": packs,
-        "filters": content_filter,
-        "triggers": triggers,
-        "variable_access": access,
-        "history": history,  # the backfill command names the service before anything is sent to it
-        "backfill": backfill_queue,
-        "explain_reports": explain_reports,
-        "site_url": settings.web_site_url,  # `!help` links the channel's command page there
-        "chatlog_db": dbs.chatlog,  # logsearch reads the log through chatlog/queries.py
-        "chatlog_writer": writer,  # `http` logs each request it makes (ADR-0020)
-        "http_hosts": http_hosts,
-        "http": HttpFetcher(http_hosts),  # fetches nothing until an admin allows a host
-    }
+    services = BotServices(
+        policy=policy,
+        variable_store=store,
+        channels=channels,
+        customcmds=customcmds,
+        packs=packs,
+        filters=content_filter,
+        triggers=triggers,
+        variable_access=access,
+        history=history,  # the backfill command names the service before anything is sent to it
+        backfill=backfill_queue,
+        explain_reports=explain_reports,
+        site_url=settings.web_site_url,  # `!help` links the channel's command page there
+        chatlog_db=dbs.chatlog,  # logsearch reads the log through chatlog/queries.py
+        chatlog_writer=writer,  # `http` logs each request it makes (ADR-0020)
+        http_hosts=http_hosts,
+        http=HttpFetcher(http_hosts),  # fetches nothing until an admin allows a host
+    )
     if twitch is not None:
-        services.update(twitch=twitch, login_for=twitch.login_for, schedule=NextStreams(twitch))
+        services.twitch, services.login_for, services.schedule = twitch, twitch.login_for, NextStreams(twitch)
     registry = builtin_registry()
     # The system packs' members are sentinels, loaded once: the pack script's changes need a restart.
     system = await SystemResolver.load(BuiltinResolver(registry), packs)
@@ -236,7 +237,7 @@ async def run(settings: Settings) -> None:
         enabled_for=lambda channel_id: (s := policy.channel_settings(channel_id)) is None or s.bot_enabled,
         on_banned=channels.leave_banned,  # a 403 on a send means banned there (architecture §10)
     )
-    runtime.services["outbox"] = outbox  # `mecho` sends its lines itself, one message each
+    services.outbox = outbox  # `mecho` sends its lines itself, one message each
     trigger_runner = TriggerRunner(runtime=runtime, policy=policy, outbox=outbox, streams=streams, writer=writer)
     timers = TimerScheduler(triggers=triggers, runner=trigger_runner, policy=policy, activity=activity, streams=streams)
     dispatcher = Dispatcher(
@@ -380,7 +381,7 @@ async def run(settings: Settings) -> None:
             expected_bot_id=settings.twitch_bot_id,
         )
         # `!join` links here: connecting is how a broadcaster adds the bot (ADR-0007).
-        runtime.services["connect_url"] = settings.public_base_url.rstrip("/") + "/auth/connect"
+        services.connect_url = settings.public_base_url.rstrip("/") + "/auth/connect"
     # People signing in to the web admin (ADR-0017). Needs only the app's credentials, not the bot's token;
     # or, with SIGNIN_PROVIDER=vex, this bot's client registration in vex-auth (ADR-0023).
     signin: TwitchSignIn | None = None

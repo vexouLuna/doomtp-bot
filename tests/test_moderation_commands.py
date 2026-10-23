@@ -13,6 +13,7 @@ import pytest
 import doomtp_bot.modules
 from doomtp_bot.channels.capabilities import BROADCAST, MODERATE, RAIDS
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.runtime.context import Args, ChannelInfo, CommandContext
@@ -131,7 +132,7 @@ async def h(dbs: Databases) -> AsyncIterator[Harness]:
         builtin_registry(),
         policy=policy,
         resolve_user=twitch.resolve_user,
-        services={"policy": policy, "twitch": twitch, "outbox": outbox},
+        services=BotServices(policy=policy, twitch=twitch, outbox=outbox),
     )
     harness = Harness(policy, runtime, twitch, outbox)
     await harness.moderator_here(True)

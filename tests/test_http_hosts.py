@@ -15,6 +15,7 @@ import pytest
 from doomtp_bot.audit.log import read_audit
 from doomtp_bot.lang.parser import Context
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.runtime.engine import RunReport, Runtime
 from doomtp_bot.runtime.result import Code
@@ -155,7 +156,7 @@ async def h(dbs: Databases) -> AsyncIterator[Harness]:
     policy = await policy_with_channels(dbs.bot, bot_owner_ids=frozenset({"1"}), clock=TickingClock())
     hosts = HostStore(dbs.bot)
     await hosts.reload()
-    runtime = Runtime(builtin_registry(), policy=policy, services={"policy": policy, "http_hosts": hosts})
+    runtime = Runtime(builtin_registry(), policy=policy, services=BotServices(policy=policy, http_hosts=hosts))
     yield Harness(hosts, policy, runtime)
 
 

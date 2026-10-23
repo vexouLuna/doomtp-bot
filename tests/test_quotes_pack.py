@@ -109,7 +109,7 @@ async def test_the_filter_keeps_blocked_words_out(h: Harness) -> None:  # noqa: 
     await filters.add(
         channel_id=CHANNEL_ID, pattern="slur", kind="word", action="block", actor_user_id=None, via="chat"
     )
-    h.runtime.services["filters"] = filters
+    h.runtime.services.filters = filters
     await _install(h)
     blocked = await _run(h, "mod", "!quote add a slur here")
     assert blocked.result is not None and not blocked.result.ok

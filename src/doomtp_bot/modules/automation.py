@@ -12,6 +12,7 @@ import re
 from typing import TYPE_CHECKING, Any
 
 from doomtp_bot.modules._common import need, rank
+from doomtp_bot.modules.services import service
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command
 from doomtp_bot.runtime.result import CommandError, Result
@@ -76,7 +77,7 @@ def leading_arg(raw: str, usage: str, *, slashes: bool = False) -> tuple[str, st
 
 
 def _service(ctx: CommandContext) -> TriggerService:
-    return ctx.service("triggers")  # type: ignore[no-any-return]
+    return service(ctx, "triggers")
 
 
 def describe(trigger: Trigger) -> str:

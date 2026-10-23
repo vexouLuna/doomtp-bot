@@ -18,6 +18,7 @@ from typing import Any
 
 from doomtp_bot.channels.capabilities import BROADCAST, MODERATE, RAIDS
 from doomtp_bot.modules._common import policy_of, rank, reject_filtered
+from doomtp_bot.modules.services import services
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command
 from doomtp_bot.runtime.result import Code, CommandError, Result
@@ -46,7 +47,7 @@ CHAT_MODES = {
 
 
 def _twitch(ctx: CommandContext) -> Any:
-    twitch = ctx.exec.services.get("twitch")
+    twitch = services(ctx).twitch
     if twitch is None:
         raise CommandError("not connected to Twitch")
     return twitch
@@ -56,7 +57,7 @@ def _refuse_untouchable(ctx: CommandContext, user: dict[str, str], what: str) ->
     """No acting on the channel, the bot itself, or anyone the policy ranks at or above the caller."""
     if user["id"] == ctx.channel.id:
         raise CommandError(f"can't {what} the broadcaster")
-    if user["id"] == getattr(ctx.exec.services.get("twitch"), "bot_id", None):
+    if user["id"] == getattr(services(ctx).twitch, "bot_id", None):
         raise CommandError(f"can't {what} the bot")
     target = policy_of(ctx).build_chatter(ctx.channel.id, user["id"], user["name"])
     if target.rank >= rank(ctx):
@@ -272,7 +273,7 @@ async def mecho_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Re
     if len(lines) > MECHO_MAX_LINES:
         raise CommandError(f"at most {MECHO_MAX_LINES} lines", Code.USAGE)
     reject_filtered(ctx, *lines)  # all or nothing: a filtered line would leave a gap in the others
-    outbox = ctx.exec.services.get("outbox")
+    outbox = services(ctx).outbox
     if outbox is None:
         raise CommandError("not connected to chat")
     for line in lines:
@@ -399,7 +400,7 @@ async def shield_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> R
 )
 async def delete_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result:
     reply = _replied(ctx, "delete")
-    if reply["id"] and reply["id"] != getattr(ctx.exec.services.get("twitch"), "bot_id", None):
+    if reply["id"] and reply["id"] != getattr(services(ctx).twitch, "bot_id", None):
         _refuse_untouchable(ctx, reply, "delete a message from")
     twitch = _twitch(ctx)
     ctx.ensure_not_cancelled()  # the last look before Twitch acts (architecture §4.3)

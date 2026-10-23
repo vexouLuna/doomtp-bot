@@ -15,6 +15,7 @@ from doomtp_bot.api.routes.data import ChannelPatch
 from doomtp_bot.core import metrics
 from doomtp_bot.lang.parser import DEFAULT_PREFIX
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.policy.settings import BOT_COLUMNS, CHANNEL_COLUMNS, CHANNEL_SETTINGS
@@ -105,7 +106,9 @@ async def h(dbs: Databases) -> AsyncIterator[Harness]:
     policy = await policy_with_channels(dbs.bot, bot_owner_ids=frozenset({OWNER_ID}), clock=clock)
     registry: CommandRegistry = builtin_registry()
     registry.extend((dice, caps, ping))
-    runtime = Runtime(registry, policy=policy, callbacks=policy, resolve_user=resolve_user, services={"policy": policy})
+    runtime = Runtime(
+        registry, policy=policy, callbacks=policy, resolve_user=resolve_user, services=BotServices(policy=policy)
+    )
     yield Harness(dbs, policy, runtime, clock)
 
 
@@ -215,7 +218,7 @@ async def test_help_and_commands_post_only_a_link_when_the_site_is_set(h: Harnes
     report = await h.say("viewer", "!help")
     assert report is not None and report.send is not None and report.send.startswith("commands: ")
     assert isinstance(report.result.data, dict) and report.result.data["link"] is None
-    h.runtime.services["site_url"] = "https://site.example/"
+    h.runtime.services.site_url = "https://site.example/"
     h.clock.now += 100
     report = await h.say("viewer", "!help")
     assert report is not None and report.send == "docs at https://site.example/"

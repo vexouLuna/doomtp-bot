@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from doomtp_bot.channels.capabilities import MODERATE
 from doomtp_bot.moderation.automod import ACTIONS, MAX_TIMEOUT_S
 from doomtp_bot.modules._common import actor, policy_of
+from doomtp_bot.modules.services import service
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command
 from doomtp_bot.runtime.result import CommandError, Result
@@ -72,7 +73,7 @@ async def automod_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> 
     if values[0] == "test":
         if len(args.values) < 2:
             raise CommandError(f"usage: {USAGE}")
-        filters: FilterService = ctx.service("filters")
+        filters: FilterService = service(ctx, "filters")
         result = filters.check(ctx.channel.id, " ".join(args.values[1:]))
         if not result.blocked:
             return Result.success("automod would leave that alone", {"blocked": False})

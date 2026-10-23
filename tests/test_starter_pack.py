@@ -100,7 +100,7 @@ class FakeWeb:
 async def test_weather_waits_for_an_admin_and_its_host(h: Harness) -> None:  # noqa: F811
     await _install(h)
     web = FakeWeb()
-    h.runtime.services["http"] = web
+    h.runtime.services.http = web
     refused = await h.run("alice", "!weather Lisbon")  # an admin hasn't allowed wttr.in yet
     assert refused.result is not None and refused.result.code == ErrorCode.E_HTTP_NOT_ALLOWED
     assert refused.send == "wttr.in isn't on the list of hosts http may fetch" and web.urls == []
@@ -116,7 +116,7 @@ async def test_weather_runs_only_while_its_publisher_is_a_bot_admin(h: Harness) 
     """The owner here is the bot owner, so a bot admin; installed by anyone else, `http` refuses."""
     await install(h.dbs.bot, owner_user_id=USERS["bob"]["id"], owner_login="bob")
     web = FakeWeb("wttr.in")
-    h.runtime.services["http"] = web
+    h.runtime.services.http = web
     refused = await h.run("alice", "!weather Lisbon")
     assert refused.result is not None and refused.result.code == ErrorCode.E_HTTP_NOT_ALLOWED
     assert web.urls == []

@@ -16,6 +16,7 @@ from doomtp_bot.core.outbox import Outbox, SendResult
 from doomtp_bot.core.streams import StreamStatus
 from doomtp_bot.filters.service import FilterService
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.cooldowns import CooldownTracker
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.service import PolicyService
@@ -77,7 +78,7 @@ async def h(dbs: Databases) -> AsyncIterator[Harness]:
     await triggers.reload()
     sender = FakeSender()
     outbox = Outbox(sender, None)
-    runtime = Runtime(builtin_registry(), policy=policy, services={"policy": policy, "triggers": triggers})
+    runtime = Runtime(builtin_registry(), policy=policy, services=BotServices(policy=policy, triggers=triggers))
     triggers.parser_params = runtime.parser_params
     runner = TriggerRunner(runtime=runtime, policy=policy, outbox=outbox)
     yield Harness(policy, triggers, runner, runtime, sender, ChatActivity(), FakeClock())
@@ -299,7 +300,7 @@ async def test_the_dispatcher_runs_listeners_and_notification_triggers(dbs: Data
     outbox = Outbox(sender, None)
     writer = ChatLogWriter(dbs.chatlog)
     streams = StreamStatus()
-    runtime = Runtime(builtin_registry(), policy=policy, services={"policy": policy})
+    runtime = Runtime(builtin_registry(), policy=policy, services=BotServices(policy=policy))
     channels = ChannelManager(policy, None, writer)
     dispatcher = Dispatcher(
         runtime=runtime,
@@ -383,7 +384,7 @@ async def _watching_dispatcher(dbs: Databases, *, pyramid_trigger: bool) -> tupl
     sender = FakeSender()
     outbox = Outbox(sender, None)
     writer = ChatLogWriter(dbs.chatlog)
-    runtime = Runtime(builtin_registry(), policy=policy, services={"policy": policy})
+    runtime = Runtime(builtin_registry(), policy=policy, services=BotServices(policy=policy))
     watcher = PyramidWatcher()
     dispatcher = Dispatcher(
         runtime=runtime,

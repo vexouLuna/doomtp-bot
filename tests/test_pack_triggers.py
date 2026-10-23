@@ -15,6 +15,7 @@ from doomtp_bot.customcmds.resolution import CustomCommandLoader
 from doomtp_bot.customcmds.service import CustomCommandService
 from doomtp_bot.filters.service import FilterService
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.runtime.engine import Runtime
@@ -77,7 +78,7 @@ async def h(dbs: Databases) -> AsyncIterator[Harness]:
         builtin_registry(),
         policy=policy,
         custom=CustomCommandLoader(customcmds, packs),
-        services={"policy": policy, "triggers": triggers, "packs": packs, "customcmds": customcmds},
+        services=BotServices(policy=policy, triggers=triggers, packs=packs, customcmds=customcmds),
     )
     triggers.parser_params = runtime.parser_params
     triggers.everywhere = lambda name: runtime.registry.get(name) is not None

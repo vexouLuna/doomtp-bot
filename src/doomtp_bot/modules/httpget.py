@@ -10,6 +10,7 @@ from yarl import URL
 from doomtp_bot.lang.ast import Lit
 from doomtp_bot.lang.errors import ParseError
 from doomtp_bot.lang.parser import Context, parse_var_ref
+from doomtp_bot.modules.services import service, services
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.executor import store_key
 from doomtp_bot.runtime.registry import Command, command
@@ -59,7 +60,7 @@ def _may_fetch(ctx: CommandContext) -> bool:
     publisher = ctx.exec.publisher
     if ctx.exec.context is not Context.BODY or publisher is None:
         return False
-    policy = ctx.service("policy")
+    policy = service(ctx, "policy")
     return bool(policy.is_bot_admin(publisher.id))
 
 
@@ -91,7 +92,7 @@ async def http_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
     if not _may_fetch(ctx):
         raise _refuse("E_HTTP_NOT_ALLOWED", "http runs only inside commands a bot admin published")
     steps = parse_path(args.get("path") or "")
-    fetcher: HttpFetcher = ctx.service("http")
+    fetcher: HttpFetcher = service(ctx, "http")
     started = time.monotonic()
     fetched: Fetched | None = None
     try:
@@ -112,7 +113,7 @@ async def _log(
 ) -> None:
     """One `command_runs` row per request: host and path, status, size and time — never the query
     string, which can carry the host's secret and whatever a chatter typed (ADR-0020 §Logging)."""
-    writer = ctx.exec.services.get("chatlog_writer")
+    writer = services(ctx).chatlog_writer
     if writer is None:
         return
     try:

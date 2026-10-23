@@ -11,6 +11,7 @@ from doomtp_bot.filters.matcher import ChannelFilter, FilterEntry, FilterError, 
 from doomtp_bot.filters.normalize import normalize
 from doomtp_bot.filters.service import FilterService
 from doomtp_bot.filters.slurs import LEVELS, slur_filter
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.runtime.result import Code
 from doomtp_bot.storage.db import Databases
@@ -237,14 +238,14 @@ async def test_the_filter_rejects_stored_content(dbs: Databases) -> None:
         store=store,
         access=access,
         custom=CustomCommandLoader(commands, packs),
-        services={
-            "policy": policy,
-            "variable_store": store,
-            "customcmds": commands,
-            "packs": packs,
-            "variable_access": access,
-            "filters": filters,
-        },
+        services=BotServices(
+            policy=policy,
+            variable_store=store,
+            customcmds=commands,
+            packs=packs,
+            variable_access=access,
+            filters=filters,
+        ),
     )
 
     channel = dataclasses.replace(policy.channel_info(CHANNEL, "doomtp"), prefix="!")

@@ -11,6 +11,7 @@ from doomtp_bot import __version__
 from doomtp_bot.core import build
 from doomtp_bot.core.schedule import FAILED_TTL_S, NextStreams
 from doomtp_bot.customcmds.resolution import SystemResolver
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.runtime import executor
 from doomtp_bot.runtime.engine import Runtime
 from doomtp_bot.runtime.result import ErrorCode
@@ -38,7 +39,7 @@ class FakeSchedule:
 def readouts(store: InMemoryVariableStore | None = None, **services: Any) -> Runtime:
     reg = registry()
     resolver = SystemResolver.from_derived(with_core(reg), "starter", STARTER)
-    return Runtime(reg, resolver=resolver, store=store or InMemoryVariableStore(), services=services)
+    return Runtime(reg, resolver=resolver, store=store or InMemoryVariableStore(), services=BotServices(**services))
 
 
 async def said(runtime: Runtime, text: str, **kwargs: Any) -> str | None:
