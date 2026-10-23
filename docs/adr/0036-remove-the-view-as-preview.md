@@ -39,5 +39,6 @@ data as someone else's or send writes it believes are read-only.
 1. [x] Remove `X-View-As` from `api/access.py` and `api/routes/session.py`, and `tests/test_api_view_as.py`;
    refuse the header with 400 (`tests/test_api_web.py`).
 2. [x] Documentation: architecture §11, the roadmap, ADR-0030's status.
-3. [ ] doomtp-web removes its View as control.
+3. [ ] doomtp-web removes its View as control (vexouLuna/doomtp-web#107). It has to ship before, or together with, this change:
+   the site sends the header today, and gets 400 once this is deployed.
 4. [ ] Remove the 400 guard once doomtp-web no longer sends the header.
