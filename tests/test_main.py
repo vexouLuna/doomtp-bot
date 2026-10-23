@@ -1,4 +1,4 @@
-"""`__main__.run`: the bot's wiring, start and shutdown, against a real database (ADR-0004).
+"""`__main__.run` (`app/bot.py`): the bot's wiring, start and shutdown, against a real database (ADR-0004).
 
 `run` builds every service, hands the web app to uvicorn and, when uvicorn returns, shuts everything down.
 These tests stand a fake in for uvicorn's `serve`: it looks at the app the bot built, asks it a few things

@@ -725,8 +725,8 @@ Everything here is built (✔):
 
 ```
 src/doomtp_bot/
-├─ __main__.py  config.py  clock.py  scopes.py  ratelimit.py              ✔ wiring, settings, now_ms, GLOBAL, sliding windows
-├─ app/         dispatch.py                                                ✔ dispatch calls each step directly
+├─ __main__.py  config.py  clock.py  scopes.py  ratelimit.py              ✔ entry point, settings, now_ms, GLOBAL, sliding windows
+├─ app/         bot.py dispatch.py                                         ✔ the wiring, start and shutdown; dispatch calls each step directly
 ├─ core/        events.py outbox.py health.py links.py build.py            ✔ leaf pieces: nothing here imports the packages above
 │               metrics.py                                                 ✔ ADR-0015 counters
 │               instance_lock.py streams.py schedule.py bot_events.py      ✔ stream poller, ADR-0034 events
