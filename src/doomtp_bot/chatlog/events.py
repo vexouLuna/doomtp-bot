@@ -15,8 +15,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from doomtp_bot.history import irc_convert
-from doomtp_bot.history.irc_parse import parse_line
+from doomtp_bot.chatlog import irc_convert
+from doomtp_bot.chatlog.irc_parse import parse_line
 
 # Whitespace-separated words, and the punctuation a mention may be followed by in chat.
 _WORD = re.compile(r"\S+")

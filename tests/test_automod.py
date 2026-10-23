@@ -8,16 +8,17 @@ from typing import Any
 
 import pytest
 
+from doomtp_bot.app.dispatch import Dispatcher
+from doomtp_bot.channels.capabilities import MODERATE
+from doomtp_bot.channels.manager import ChannelManager
 from doomtp_bot.chatlog.writer import ChatLogWriter
-from doomtp_bot.core.capabilities import MODERATE
-from doomtp_bot.core.channels import ChannelManager
-from doomtp_bot.core.dispatch import Dispatcher
 from doomtp_bot.core.events import Badge, ChatMessage
 from doomtp_bot.core.outbox import Outbox, SendResult
 from doomtp_bot.filters.service import FilterService
 from doomtp_bot.moderation.automod import AutoMod
 from doomtp_bot.moderation.index import ModerationIndex
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.runtime.engine import Runtime
@@ -129,10 +130,10 @@ async def h(dbs: Databases) -> AsyncIterator[Harness]:
         policy=policy,
         callbacks=policy,
         resolve_user=twitch.resolve_user,
-        services={"policy": policy, "twitch": twitch, "filters": filters},
+        services=BotServices(policy=policy, twitch=twitch, filters=filters),
     )
     channels = ChannelManager(policy, twitch, writer, default_prefix="!")
-    runtime.services["channels"] = channels
+    runtime.services.channels = channels
     dispatcher = Dispatcher(
         runtime=runtime,
         policy=policy,

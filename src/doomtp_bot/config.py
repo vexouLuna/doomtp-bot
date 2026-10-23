@@ -9,8 +9,11 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from doomtp_bot.api.sessions import LOCAL_NETWORKS
 from doomtp_bot.lang.parser import DEFAULT_PREFIX
+
+#: Where the password login is taken from unless ADMIN_PASSWORD_NETWORKS says otherwise: this host and
+#: the private ranges. The password is the way in when Twitch is down, not a second front door.
+LOCAL_NETWORKS = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"  # conventions:allow-infra
 
 
 class Settings(BaseSettings):
@@ -104,6 +107,18 @@ class Settings(BaseSettings):
         if parts.port:
             host = f"{host}:{parts.port}"
         return urlunsplit(parts._replace(netloc=f"{userinfo}@{host}"))
+
+    @property
+    def secure_cookies(self) -> bool:
+        """Cookies are `Secure` once the site is reached over https, whether or not the proxy is trusted."""
+        return self.public_base_url.lower().startswith("https://")
+
+    def forwarding_undoes_password_networks(self) -> bool:
+        """WEB_FORWARDED_ALLOW_IPS trusts every peer while the admin password is limited to some networks.
+        Then any client can claim a private address in X-Forwarded-For, and the limit means nothing."""
+        trusts_all = "*" in {p.strip() for p in self.web_forwarded_allow_ips.split(",")}
+        limited = "*" not in {p.strip() for p in self.admin_password_networks.split(",")}
+        return trusts_all and limited and self.admin_password_value() is not None
 
     @property
     def lock_path(self) -> Path:

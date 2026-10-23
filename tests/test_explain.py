@@ -13,6 +13,7 @@ from doomtp_bot.customcmds.resolution import CustomCommandLoader
 from doomtp_bot.customcmds.service import CustomCommandService
 from doomtp_bot.lang.parser import Context
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.runtime.engine import Runtime
 from doomtp_bot.runtime.explain import ReportStore, explain
@@ -63,12 +64,12 @@ async def h(dbs: Databases) -> AsyncIterator[Harness]:
         store=store,
         access=access,
         custom=CustomCommandLoader(service),
-        services={
-            "policy": policy,
-            "variable_store": store,
-            "customcmds": service,
-            "variable_access": access,
-        },
+        services=BotServices(
+            policy=policy,
+            variable_store=store,
+            customcmds=service,
+            variable_access=access,
+        ),
     )
     yield Harness(policy, runtime, store, service)
 
@@ -154,12 +155,12 @@ async def test_the_chat_command_answers_in_one_line(h: Harness) -> None:
 
 
 async def test_the_chat_reply_links_the_full_report_only_when_chat_can_open_it(h: Harness) -> None:
-    h.runtime.services["explain_reports"] = ReportStore()  # PUBLIC_WEB_UI off: no base URL
+    h.runtime.services.explain_reports = ReportStore()  # PUBLIC_WEB_UI off: no base URL
     reply = await h.say("alice", "!explain !ping")
     assert reply is not None and "full report" not in reply
 
     reports = ReportStore("https://bot.example/")
-    h.runtime.services["explain_reports"] = reports
+    h.runtime.services.explain_reports = reports
     reply = await h.say("alice", "!explain !random 1-6 | echo {_1}")
     assert reply is not None and "; full report: https://bot.example/explain/" in reply
     kept = reports.get(reply.rsplit("/", 1)[1])

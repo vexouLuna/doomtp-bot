@@ -23,8 +23,8 @@ from vex_platform.actor import VIAS
 from vex_platform.audit.sql import insert_sql
 
 from doomtp_bot.clock import now_ms
-from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.runtime.result import to_json
+from doomtp_bot.scopes import GLOBAL
 from doomtp_bot.storage.db import Connection, transaction
 
 TABLE = "public.audit_log"

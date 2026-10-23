@@ -21,7 +21,7 @@ from pydantic import Field
 from vex_platform.api import ApiError, ApiModel, Page, UtcDatetime
 
 from doomtp_bot.api.access import Caller
-from doomtp_bot.api.routes.data import LOG_READ, _is_public
+from doomtp_bot.api.routes.log import LOG_READ, _is_public
 from doomtp_bot.chatlog import queries, timeline
 from doomtp_bot.policy.snapshot import ChannelSettings
 

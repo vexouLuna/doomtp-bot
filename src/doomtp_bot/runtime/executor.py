@@ -660,7 +660,7 @@ class Executor:
     @staticmethod
     async def next_stream(ctx: ExecContext) -> Any:
         """`$channel.next_stream`, asked of Helix only when a command reads it (core/schedule.py)."""
-        schedule: NextStreams | None = ctx.services.get("schedule")
+        schedule: NextStreams | None = ctx.services.schedule
         found = None if schedule is None else await schedule.next_stream(ctx.channel.id, ctx.clock())
         return MISSING if found is None else found
 

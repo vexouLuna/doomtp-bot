@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from doomtp_bot.chatlog.queries import MAX_QUERY_CHARS, search_messages
 from doomtp_bot.modules._common import policy_of
+from doomtp_bot.modules.services import service
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command
 from doomtp_bot.runtime.result import Code, CommandError, Result
@@ -61,7 +62,7 @@ async def logsearch_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -
         return Result.failure(Code.NOT_FOUND, "this channel's chat isn't logged")
 
     found = await search_messages(
-        ctx.service("chatlog_db"),
+        service(ctx, "chatlog_db"),
         ctx.channel.id,
         words,
         limit=MAX_COUNTED + 1,

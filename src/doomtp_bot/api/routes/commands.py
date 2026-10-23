@@ -14,9 +14,11 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from doomtp_bot.api import deps
 from doomtp_bot.api.access import PERSONAL_READ, PERSONAL_WRITE, Caller, check_setting_role
-from doomtp_bot.api.routes.data import MAX_ROWS, _channel, _custom_json, _limits_json, _policy, _state
+from doomtp_bot.api.routes.data import MAX_ROWS, _channel, _custom_json, _policy
 from doomtp_bot.api.routes.manage import ValueBody, _filter_check, commit
+from doomtp_bot.api.routes.variables import _limits_json
 from doomtp_bot.customcmds import params
 from doomtp_bot.customcmds.packs import Pack, PackService, SystemPackError
 from doomtp_bot.customcmds.service import CustomCommand, CustomCommandError, CustomCommandService
@@ -37,15 +39,15 @@ GRANTABLE = ("channel", "channel.chatter")
 
 
 def _commands(request: Request) -> CustomCommandService:
-    return _state(request, "customcmds")  # type: ignore[no-any-return]
+    return deps.customcmds(request)
 
 
 def _packs(request: Request) -> PackService:
-    return _state(request, "packs")  # type: ignore[no-any-return]
+    return deps.packs(request)
 
 
 def _triggers(request: Request) -> TriggerService:
-    return _state(request, "triggers")  # type: ignore[no-any-return]
+    return deps.triggers(request)
 
 
 def _me(caller: Caller) -> tuple[str, str]:
@@ -288,7 +290,7 @@ async def link_command(request: Request, alias: str, body: LinkBody, caller: Cal
     if (body.owner is None) == (body.channel is None):
         raise HTTPException(status_code=400, detail="name either an owner or a channel")
     if body.owner is not None:
-        owner = await _state(request, "twitch").resolve_user(body.owner.lstrip("@"))
+        owner = await deps.twitch(request).resolve_user(body.owner.lstrip("@"))
         command = await service.by_owner(owner["id"], body.command) if owner else None
         if command is None or not command.shareable:
             raise HTTPException(status_code=404, detail=f"@{body.owner} has no shared command named {body.command}")
@@ -583,7 +585,7 @@ def _entry_json(entry: Entry, logins: dict[str, str]) -> dict[str, Any]:
 async def my_variables(request: Request, caller: Caller = PERSONAL_READ) -> dict[str, Any]:
     """What the user owns: `chatter.*`, their `channel.chatter.*` everywhere, and their commands' `publisher.*`."""
     user_id, _ = _me(caller)
-    entries = await _state(request, "variable_store").entries_of_user(user_id)
+    entries = await deps.variable_store(request).entries_of_user(user_id)
     logins = _logins(request)
     return {"variables": [_entry_json(e, logins) for e in entries]}
 
@@ -593,7 +595,7 @@ def _my_context(request: Request, caller: Caller) -> Any:
     user_id, login = _me(caller)
     policy = _policy(request)
     invoker = policy.build_chatter(GLOBAL, user_id, login)
-    return _state(request, "runtime").make_context(
+    return deps.runtime(request).make_context(
         channel=policy.channel_info(GLOBAL, ""), invoker=invoker, trigger_type=caller.actor.via
     )
 
@@ -624,7 +626,7 @@ async def delete_my_variable(request: Request, name: str, caller: Caller = PERSO
     """`!var del chatter.<name>`."""
     ctx = _my_context(request, caller)
     key = _my_key(ctx, name)
-    if await _state(request, "variable_store").get(key) is MISSING:
+    if await deps.variable_store(request).get(key) is MISSING:
         raise HTTPException(status_code=404, detail=f"chatter.{name} isn't set")
     await commit(request, ctx, WriteOp("delete", key))
     return {"name": name, "removed": True}
@@ -634,7 +636,7 @@ async def delete_my_variable(request: Request, name: str, caller: Caller = PERSO
 async def my_storage(request: Request, caller: Caller = PERSONAL_READ) -> dict[str, Any]:
     """`!var usage chatter` and `!var usage publisher`: what the user keeps, and what their commands do."""
     user_id, _ = _me(caller)
-    store = _state(request, "variable_store")
+    store = deps.variable_store(request)
     found: dict[str, Any] = {}
     for kind in ("chatter", "publisher"):
         used = await store.usage(kind, user_id)
@@ -649,7 +651,7 @@ async def my_runs(
 ) -> dict[str, Any]:
     """The user's own runs, in every channel."""
     user_id, _ = _me(caller)
-    conn, logins = _state(request, "chatlog_db"), _logins(request)
+    conn, logins = deps.chatlog_db(request), _logins(request)
     async with await conn.execute(
         "SELECT channel_id, trigger_type, expr, code, message, duration_ms, cancelled_reason, at"
         " FROM command_runs WHERE user_id = %s ORDER BY at DESC LIMIT %s",
@@ -724,7 +726,7 @@ async def _resolve_pack(request: Request, caller: Caller, name: str, owner: str 
     packs = _packs(request)
     if owner is None:
         return await _own_pack(request, user_id, name, writable=False)
-    user = await _state(request, "twitch").resolve_user(owner.lstrip("@"))
+    user = await deps.twitch(request).resolve_user(owner.lstrip("@"))
     pack = await packs.by_owner(user["id"], name) if user else None
     if pack is None:
         raise HTTPException(status_code=404, detail=f"@{owner} has no pack named {name}")
@@ -790,7 +792,7 @@ async def unpublish_pack(
 # ── write grants (`cc grant`, `cc revoke`) ──────────────────────────────────
 def _channel_writes(request: Request, command: CustomCommand, prefix: str) -> list[str]:
     """The channel variables a body writes; published, each needs a grant (ADR-0010)."""
-    runtime = _state(request, "runtime")
+    runtime = deps.runtime(request)
     try:
         node = parse(command.body, Context.BODY, runtime.parser_params(prefix))
     except ParseError:
@@ -800,7 +802,7 @@ def _channel_writes(request: Request, command: CustomCommand, prefix: str) -> li
 
 def _missing_grants(request: Request, scope: str, commands: list[CustomCommand]) -> dict[str, list[str]]:
     """What each command writes that isn't granted yet, as chat's warning after a publish says."""
-    access = _state(request, "variable_access")
+    access = deps.variable_access(request)
     prefix = DEFAULT_PREFIX
     if scope != GLOBAL:
         settings = _policy(request).channel_settings(scope)
@@ -830,7 +832,7 @@ async def channel_grants(request: Request, login: str, caller: Caller = PERSONAL
     """For each command the channel offers that writes channel variables: what it writes, and what it may."""
     settings = _channel(request, login)
     check_setting_role(request, caller, settings.login, "grant_min_role", "see variable grants")
-    service, packs, access = _commands(request), _packs(request), _state(request, "variable_access")
+    service, packs, access = _commands(request), _packs(request), deps.variable_access(request)
     offered: dict[str, CustomCommand] = {}
     for scope in (GLOBAL, settings.channel_id):  # the channel's own win, as at run time
         for publication, command in await service.publications_in(scope):
@@ -862,7 +864,7 @@ async def _set_grant(
     check_setting_role(request, caller, settings.login, "grant_min_role", "grant variable writes")
     command = await _reachable(request, settings, name)
     try:
-        await _state(request, "variable_access").set_grant(
+        await deps.variable_access(request).set_grant(
             settings.channel_id,
             command.id,
             variable.lower(),

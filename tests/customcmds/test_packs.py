@@ -13,6 +13,7 @@ from doomtp_bot.customcmds.packs import RESERVED_PACK_NAMES, PackService
 from doomtp_bot.customcmds.resolution import CustomCommandLoader, SystemResolver
 from doomtp_bot.customcmds.service import CustomCommandError, CustomCommandService
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.runtime.engine import RunReport, Runtime
@@ -91,13 +92,13 @@ async def h(dbs: Databases) -> AsyncIterator[Harness]:
         resolve_user=resolve_user,
         resolver=SystemResolver(BuiltinResolver(registry)),  # empty until a test installs a system pack
         custom=CustomCommandLoader(service, packs),
-        services={
-            "policy": policy,
-            "variable_store": store,
-            "customcmds": service,
-            "packs": packs,
-            "variable_access": access,
-        },
+        services=BotServices(
+            policy=policy,
+            variable_store=store,
+            customcmds=service,
+            packs=packs,
+            variable_access=access,
+        ),
     )
     yield Harness(dbs, policy, service, packs, runtime)
 

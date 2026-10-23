@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+from doomtp_bot.chatlog import irc_convert
+from doomtp_bot.chatlog.irc_parse import IrcLine, parse_line
 from doomtp_bot.core.events import Badge, ChatMessage, ChatNotification, MessageDeleted
 from doomtp_bot.core.events import UserMessagesCleared as UserCleared
-from doomtp_bot.history import irc_convert
 from doomtp_bot.history.backfill import to_events
-from doomtp_bot.history.irc_parse import IrcLine, parse_line
 
 
 def line_of(raw: str) -> IrcLine:

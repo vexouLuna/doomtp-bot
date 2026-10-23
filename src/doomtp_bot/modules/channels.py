@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from vex_platform.actor import Actor as JobActor
 
+from doomtp_bot.channels.manager import ChannelBanned
 from doomtp_bot.clock import now_ms
-from doomtp_bot.core.channels import ChannelBanned
 from doomtp_bot.history.jobs import GAPS, OPEN_STATES, BackfillJob, BackfillJobs, BackfillRefused
 from doomtp_bot.modules._common import actor, rank, sign_of, user_arg
+from doomtp_bot.modules.services import service, services
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK, BROADCASTER_RANK
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command
@@ -52,7 +53,7 @@ MODULE = "core_admin"
     )
 )
 async def join_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result:
-    channels, twitch = ctx.service("channels"), ctx.service("twitch")
+    channels, twitch = service(ctx, "channels"), service(ctx, "twitch")
     if ctx.invoker is None:
         return Result.failure(Code.FAIL, "join needs a chatter")
     if args.get("basic") != "basic":  # a channel name here changes nothing: the link is the same
@@ -75,7 +76,7 @@ async def join_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
         return Result.failure(Code.FAIL, f"{exc}. {ctx.channel.prefix}join basic {login} rejoin comes back anyway")
     if failed:
         return Result.failure(Code.FAIL, f"joined #{login}, but Twitch refused: {', '.join(failed)}")
-    joined = ctx.service("policy").channel_settings(channel_id)
+    joined = service(ctx, "policy").channel_settings(channel_id)
     backfill = "on" if joined is None or joined.history_backfill else "off"
     return Result.success(
         f"joined #{login}. Backfill is {backfill}; {sign_of(ctx, channel_id)}backfill there explains it.",
@@ -83,14 +84,16 @@ async def join_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
     )
 
 
-def _connect_link(ctx: CommandContext, bot_id: str, bot_login: str) -> Result:
+def _connect_link(ctx: CommandContext, bot_id: str | None, bot_login: str | None) -> Result:
     """The link is the same for everyone: whoever signs in with it is the channel the bot joins."""
+    if bot_id is None or bot_login is None:
+        return Result.failure(Code.FAIL, "the bot isn't signed in to Twitch yet")
     if ctx.channel.id != bot_id:
         return Result.failure(
             Code.FAIL,
             f"type {sign_of(ctx, bot_id)}join in #{bot_login}'s chat to add the bot to your channel",
         )
-    url = ctx.exec.services.get("connect_url")
+    url = services(ctx).connect_url
     if not url:
         return Result.failure(Code.FAIL, "the connect page isn't set up, so the bot can't take new channels")
     return Result.success(
@@ -113,7 +116,7 @@ def _connect_link(ctx: CommandContext, bot_id: str, bot_login: str) -> Result:
     )
 )
 async def part_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result:
-    channels, twitch = ctx.service("channels"), ctx.service("twitch")
+    channels, twitch = service(ctx, "channels"), service(ctx, "twitch")
     target = args.get("channel")
     if target:
         if rank(ctx) < BOT_ADMIN_RANK:
@@ -169,13 +172,13 @@ async def part_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
 )
 async def backfill_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result:
     """The consent prompt ADR-0008 asks for, and the queue ADR-0024 §5 adds."""
-    policy = ctx.service("policy")
+    policy = service(ctx, "policy")
     settings = policy.channel_settings(ctx.channel.id)
     if settings is None:
         return Result.failure(Code.FAIL, "backfill is a channel setting")
     action = (args.get("action") or "").lower()
     if not action:
-        provider = ctx.exec.services.get("history")
+        provider = services(ctx).history
         where = getattr(provider, "base_url", "") or "a history service"
         return Result.success(
             f"backfill is {'on' if settings.history_backfill else 'off'}. When on, chat missed while the"
@@ -183,7 +186,7 @@ async def backfill_cmd(ctx: CommandContext, args: Args, stdin: Result | None) ->
             f" {ctx.channel.prefix}backfill on|off, or gaps, 6h, queue, cancel.",
             {"enabled": settings.history_backfill, "provider": where},
         )
-    queue: BackfillJobs | None = ctx.exec.services.get("backfill")
+    queue: BackfillJobs | None = services(ctx).backfill
     if action == "queue":
         if queue is None:
             return Result.failure(Code.FAIL, "the backfill queue isn't running")

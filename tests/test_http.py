@@ -18,6 +18,7 @@ from aiohttp import web
 from aiohttp.abc import AbstractResolver, ResolveResult
 
 from doomtp_bot.lang.parser import Context
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.runtime.context import Publisher
 from doomtp_bot.runtime.result import Code, ErrorCode
 from doomtp_bot.webfetch.addresses import is_ip_literal, matching_pattern, refused
@@ -304,7 +305,7 @@ class Writer:
 
 
 def runtime(f: HttpFetcher, writer: Writer | None = None) -> Any:
-    return make_runtime(services={"policy": Admins(), "http": f, "chatlog_writer": writer or Writer()})
+    return make_runtime(services=BotServices(policy=Admins(), http=f, chatlog_writer=writer or Writer()))
 
 
 async def test_http_runs_only_in_an_admins_command(site: Web) -> None:

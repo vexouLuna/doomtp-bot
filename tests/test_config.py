@@ -62,3 +62,41 @@ def test_an_unknown_provider_is_refused(monkeypatch: pytest.MonkeyPatch, value: 
     monkeypatch.setenv("SIGNIN_PROVIDER", value)
     with pytest.raises(ValueError):
         settings()
+
+
+def test_cookies_are_secure_once_the_site_is_https(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert not settings().secure_cookies  # http://localhost:8080 by default
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://bot.example")
+    assert settings().secure_cookies
+
+
+def test_trusting_every_proxy_undoes_the_password_networks(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("ADMIN_PASSWORD_FILE", "ADMIN_PASSWORD_NETWORKS", "WEB_FORWARDED_ALLOW_IPS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ADMIN_PASSWORD", "dummy")
+    assert not settings().forwarding_undoes_password_networks()  # the default trusts only 127.0.0.1
+    monkeypatch.setenv("WEB_FORWARDED_ALLOW_IPS", "*")
+    assert settings().forwarding_undoes_password_networks()
+    monkeypatch.setenv("ADMIN_PASSWORD_NETWORKS", "*")  # the password is meant to work from anywhere
+    assert not settings().forwarding_undoes_password_networks()
+    monkeypatch.setenv("ADMIN_PASSWORD_NETWORKS", "192.0.2.0/24")  # a documentation range
+    monkeypatch.delenv("ADMIN_PASSWORD")
+    assert not settings().forwarding_undoes_password_networks()  # no password, nothing to protect
+
+
+def test_the_bot_refuses_to_start_when_forwarding_undoes_the_password_networks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from doomtp_bot import __main__
+
+    for name in ("ADMIN_PASSWORD_FILE", "ADMIN_PASSWORD_NETWORKS"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("ADMIN_PASSWORD", "dummy")
+    monkeypatch.setenv("WEB_FORWARDED_ALLOW_IPS", "*")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.chdir(tmp_path)  # no .env here
+    monkeypatch.setattr("sys.argv", ["doomtp-bot"])
+    with pytest.raises(SystemExit) as exited:
+        __main__.main()
+    assert exited.value.code == 1
+    assert not (tmp_path / ".lock").exists()  # refused before taking the instance lock

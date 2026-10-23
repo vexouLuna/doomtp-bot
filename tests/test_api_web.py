@@ -13,13 +13,15 @@ from doomtp_bot.api.app import create_app
 from doomtp_bot.api.grammar import GRAMMAR_RULES
 from doomtp_bot.api.keys import ApiKeyService
 from doomtp_bot.api.routes import site
-from doomtp_bot.api.sessions import LOCAL_NETWORKS, AdminAuth, LoginLimiter, address_in, parse_networks
+from doomtp_bot.api.sessions import AdminAuth, LoginLimiter, address_in, parse_networks
 from doomtp_bot.clock import now_ms
+from doomtp_bot.config import LOCAL_NETWORKS
 from doomtp_bot.core.health import ComponentHealth, HealthRegistry, Status
 from doomtp_bot.customcmds.packs import PackService
 from doomtp_bot.customcmds.service import CustomCommandService
 from doomtp_bot.filters.service import FilterService
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.roles import BUILTIN_RANKS, GLOBAL
 from doomtp_bot.runtime.engine import Runtime
@@ -52,7 +54,7 @@ async def app(dbs: Databases) -> AsyncIterator[Any]:
     yield create_app(
         health,
         None,
-        runtime=Runtime(builtin_registry(), policy=policy, services={"policy": policy}),
+        runtime=Runtime(builtin_registry(), policy=policy, services=BotServices(policy=policy)),
         policy=policy,
         services={
             "customcmds": customcmds,
@@ -116,6 +118,23 @@ async def test_the_cookie_is_secure_behind_https(app: Any) -> None:
     async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="https://test") as http:
         response = await http.post("/api/v1/session", json={"password": PASSWORD})
     assert "secure" in response.headers["set-cookie"].lower()
+
+
+async def test_the_cookie_is_secure_when_the_site_is_https_even_over_plain_http(app: Any) -> None:
+    """Behind a TLS proxy uvicorn doesn't trust, requests read as http; PUBLIC_BASE_URL still says https."""
+    app.state.secure_cookies = True
+    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as http:
+        response = await http.post("/api/v1/session", json={"password": PASSWORD})
+    assert "secure" in response.headers["set-cookie"].lower()
+
+
+async def test_the_removed_preview_header_is_refused(client: httpx.AsyncClient) -> None:
+    """ADR-0036: a site still previewing must not get an admin's answers, or send writes as the admin."""
+    csrf = await _login(client)
+    preview = {"X-View-As": "user", "X-CSRF-Token": csrf}
+    assert (await client.get("/api/v1/session", headers=preview)).status_code == 400
+    assert (await client.get("/api/v1/channels", headers=preview)).status_code == 400
+    assert (await client.get("/api/v1/channels")).status_code == 200  # without it, all as before
 
 
 async def test_logins_are_rate_limited_per_address(client: httpx.AsyncClient, app: Any) -> None:

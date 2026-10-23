@@ -6,9 +6,8 @@ from typing import Any
 
 import pytest
 
-from doomtp_bot.chatlog import events
-from doomtp_bot.history import irc_convert
-from doomtp_bot.history.irc_parse import IrcLine, parse_line
+from doomtp_bot.chatlog import events, irc_convert
+from doomtp_bot.chatlog.irc_parse import IrcLine, parse_line
 
 # Real lines from logs.ivr.fi for #vexoulz, as `raw=true` returns them.
 REPLY = (

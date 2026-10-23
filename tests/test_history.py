@@ -7,12 +7,12 @@ from dataclasses import dataclass, field
 import pytest
 
 from doomtp_bot.chatlog import events
+from doomtp_bot.chatlog.irc_parse import badges, parse_line, unescape_tag
 from doomtp_bot.chatlog.writer import ChatLogWriter
 from doomtp_bot.core import metrics
 from doomtp_bot.core.events import ChatCleared, ChatMessage, ChatNotification, MessageDeleted
 from doomtp_bot.core.events import UserMessagesCleared as UserCleared
 from doomtp_bot.history.backfill import BackfillService, Gap, find_gaps, to_events
-from doomtp_bot.history.irc_parse import badges, parse_line, unescape_tag
 from doomtp_bot.history.provider import PAUSED, HistoryResponse
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.storage.db import Databases

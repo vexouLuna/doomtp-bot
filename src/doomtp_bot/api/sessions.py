@@ -13,17 +13,14 @@ import hmac
 import math
 import secrets
 import time
-from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from ipaddress import IPv4Network, IPv6Network, ip_address, ip_network
+
+from doomtp_bot.ratelimit import SlidingWindow
 
 SESSION_COOKIE = "doomtp_admin"
 SESSION_TTL_S = 8 * 3600
 SCRYPT = {"n": 2**14, "r": 8, "p": 1}
-#: Where the password login is taken from unless ADMIN_PASSWORD_NETWORKS says otherwise: this host and
-#: the private ranges. The password is the way in when Twitch is down, not a second front door.
-LOCAL_NETWORKS = "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"  # conventions:allow-infra
-
 Networks = tuple[IPv4Network | IPv6Network, ...]
 
 
@@ -123,6 +120,8 @@ class AdminAuth:
             if user_id is None:
                 raise ValueError("a user session needs the user")
             channels = frozenset()
+        now = self._now()  # the sessions that ran out go now, not only when someone presents one again
+        self._sessions = {t: s for t, s in self._sessions.items() if now - s.created_at <= self.ttl_s}
         session = Session(
             secrets.token_urlsafe(32),
             self._now(),
@@ -172,31 +171,26 @@ class LoginLimiter:
     attempts: int = 5
     window_s: float = 300.0
     clock: object = time.monotonic
-    _failures: dict[str, deque[float]] = field(default_factory=lambda: defaultdict(deque), repr=False)
+    _failures: SlidingWindow = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._failures = SlidingWindow(self.window_s, self._now)
 
     def _now(self) -> float:
         return float(self.clock())  # type: ignore[operator]
 
-    def _recent(self, address: str) -> deque[float]:
-        failures = self._failures[address]
-        while failures and self._now() - failures[0] >= self.window_s:
-            failures.popleft()
-        return failures
-
     def retry_after(self, address: str) -> int | None:
         """Whole seconds to wait before `address` may try again, or None when it may try now."""
-        failures = self._recent(address)
-        if len(failures) < self.attempts:
-            if not failures:
-                self._failures.pop(address, None)
+        oldest = self._failures.oldest(address)
+        if oldest is None or self._failures.count(address) < self.attempts:
             return None
-        return max(1, math.ceil(self.window_s - (self._now() - failures[0])))
+        return max(1, math.ceil(self.window_s - (self._now() - oldest)))
 
     def failed(self, address: str) -> None:
-        self._recent(address).append(self._now())
+        self._failures.add(address)
 
     def reset(self, address: str) -> None:
-        self._failures.pop(address, None)
+        self._failures.clear(address)
 
 
 @dataclass
@@ -207,7 +201,10 @@ class ReadLimiter:
     reads: int = 30
     window_s: float = 60.0
     clock: object = time.monotonic
-    _hits: dict[str, deque[float]] = field(default_factory=lambda: defaultdict(deque), repr=False)
+    _hits: SlidingWindow = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._hits = SlidingWindow(self.window_s, self._now)
 
     def _now(self) -> float:
         return float(self.clock())  # type: ignore[operator]
@@ -215,10 +212,8 @@ class ReadLimiter:
     def hit(self, address: str) -> int | None:
         """Count a read. Whole seconds to wait when `address` is over its limit (the read isn't counted
         then), else None."""
-        now, hits = self._now(), self._hits[address]
-        while hits and now - hits[0] >= self.window_s:
-            hits.popleft()
-        if len(hits) >= self.reads:
-            return max(1, math.ceil(self.window_s - (now - hits[0])))
-        hits.append(now)
+        oldest = self._hits.oldest(address)
+        if oldest is not None and self._hits.count(address) >= self.reads:
+            return max(1, math.ceil(self.window_s - (self._now() - oldest)))
+        self._hits.add(address)
         return None

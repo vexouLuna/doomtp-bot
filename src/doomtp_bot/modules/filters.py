@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, cast
 from doomtp_bot.filters.matcher import Action, FilterError, Kind
 from doomtp_bot.filters.service import ACTIONS
 from doomtp_bot.modules._common import need, rank
+from doomtp_bot.modules.services import service
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK, GLOBAL
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command
@@ -28,7 +29,7 @@ USAGE = (
 
 
 def _filters(ctx: CommandContext) -> FilterService:
-    return ctx.service("filters")  # type: ignore[no-any-return]
+    return service(ctx, "filters")
 
 
 def _scope(ctx: CommandContext, words: list[str]) -> str:

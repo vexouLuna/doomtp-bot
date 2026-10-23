@@ -22,7 +22,7 @@ import structlog
 from doomtp_bot.policy.repository import Actor, PolicyRepository
 
 if TYPE_CHECKING:
-    from doomtp_bot.core.channels import ChannelManager
+    from doomtp_bot.channels.manager import ChannelManager
     from doomtp_bot.policy.service import PolicyService
 
 log = structlog.get_logger(__name__)
