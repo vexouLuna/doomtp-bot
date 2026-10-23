@@ -55,6 +55,7 @@ from doomtp_bot.history.jobs import register as register_backfill
 from doomtp_bot.history.provider import HistoryResponse
 from doomtp_bot.lang.parser import Context
 from doomtp_bot.modules import builtin_registry
+from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.policy.service import PolicyService
@@ -247,7 +248,7 @@ async def main(args: argparse.Namespace) -> None:
         builtin_registry(),
         policy=policy,
         custom=CustomCommandLoader(customcmds, packs),  # without it, explain knows no custom command
-        services={"policy": policy, "packs": packs, "customcmds": customcmds},
+        services=BotServices(policy=policy, packs=packs, customcmds=customcmds),
     )
     triggers.parser_params = runtime.parser_params
     await seed(policy, customcmds, packs, triggers=triggers, filters=filters)
