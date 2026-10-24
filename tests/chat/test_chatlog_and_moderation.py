@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from doomtp_bot.chatlog.writer import ChatLogWriter
-from doomtp_bot.core.events import Badge, ChatCleared, ChatMessage, MessageDeleted, UserMessagesCleared
+from doomtp_bot.core.events import (
+    Badge,
+    ChatCleared,
+    ChatMessage,
+    MessageDeleted,
+    ModerationAction,
+    UserMessagesCleared,
+)
 from doomtp_bot.moderation.index import ModerationIndex
 from doomtp_bot.storage.db import Databases
 
@@ -78,6 +85,48 @@ async def test_moderation_flags_never_delete_rows(dbs: Databases) -> None:
         ("delete",),
         ("user_clear",),
         ("chat_clear",),
+    ]
+
+
+async def test_a_moderation_event_offered_again_is_stored_once(dbs: Databases) -> None:
+    writer = ChatLogWriter(dbs.chatlog)
+    for source in ("eventsub", "ivr-logs", "ivr-logs"):  # a redelivery, then two backfills over the same gap
+        await writer.moderation(MessageDeleted("c1", "m1", "u1", at=1500, source=source))
+        await writer.moderation(UserMessagesCleared("c1", "u1", at=2200, duration_s=600, source=source))
+        await writer.moderation(ChatCleared("c1", at=2600, source=source))
+    await writer.moderation(MessageDeleted("c1", "m2", "u1", at=1500))  # another message, same moment
+    await writer.moderation(UserMessagesCleared("c1", "u1", at=9000, duration_s=600))  # a second timeout later
+    await writer.moderation(UserMessagesCleared("c1", "u1", at=9500, duration_s=60))  # and another, shorter
+    await writer.stop()
+    assert await rows(dbs, "SELECT type, message_id, source, at FROM mod_events ORDER BY id") == [
+        ("delete", "m1", "eventsub", 1500),
+        ("user_clear", None, "eventsub", 2200),
+        ("chat_clear", None, "eventsub", 2600),
+        ("delete", "m2", "eventsub", 1500),
+        ("user_clear", None, "eventsub", 9000),
+        ("user_clear", None, "eventsub", 9500),
+    ]
+
+
+async def test_a_timeout_seen_live_and_by_backfill_is_stored_once(dbs: Databases) -> None:
+    writer = ChatLogWriter(dbs.chatlog)
+    # Backfill's IRC line first, then EventSub's action for it a moment later with the moderator.
+    await writer.moderation(UserMessagesCleared("c1", "u1", at=5000, duration_s=600, source="ivr-logs"))
+    await writer.moderation(ModerationAction("c1", "timeout", "mod1", "u1", at=5400, duration_s=600))
+    # EventSub first this time; the backfilled line comes later and adds nothing.
+    await writer.moderation(ModerationAction("c1", "ban", "mod1", "u2", at=7000))
+    await writer.moderation(UserMessagesCleared("c1", "u2", at=6500, source="ivr-logs"))
+    # Not the same action: other durations, or too far apart.
+    await writer.moderation(UserMessagesCleared("c1", "u1", at=5500, duration_s=60, source="ivr-logs"))
+    await writer.moderation(ModerationAction("c1", "timeout", "mod1", "u1", at=8000, duration_s=600))
+    await writer.stop()
+    assert await rows(
+        dbs, "SELECT type, target_user_id, moderator_user_id, source, at, duration_s FROM mod_events ORDER BY id"
+    ) == [
+        ("timeout", "u1", "mod1", "ivr-logs", 5000, 600),
+        ("ban", "u2", "mod1", "eventsub", 7000, None),
+        ("user_clear", "u1", None, "ivr-logs", 5500, 60),
+        ("timeout", "u1", "mod1", "eventsub", 8000, 600),
     ]
 
 

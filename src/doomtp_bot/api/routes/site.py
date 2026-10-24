@@ -16,14 +16,30 @@ from doomtp_bot import __version__
 from doomtp_bot.api import deps
 from doomtp_bot.api.grammar import GRAMMAR, GRAMMAR_RULES
 from doomtp_bot.api.routes.data import _channel, _custom_json
+from doomtp_bot.channels.capabilities import MODERATE
 from doomtp_bot.chatlog import stats as chatlog_stats
 from doomtp_bot.clock import now_ms
 from doomtp_bot.core.build import BUILD, STARTED_AT, uptime_s
 from doomtp_bot.lang import SYNTAX_VERSION
 from doomtp_bot.lang.parser import DEFAULT_PREFIX
 from doomtp_bot.policy.roles import BUILTIN_RANKS, CUSTOM_RANK_MAX, CUSTOM_RANK_MIN, GLOBAL
+from doomtp_bot.policy.snapshot import ChannelSettings
 
 router = APIRouter(prefix="/api/v1", tags=["site"])
+
+
+def _public(c: ChannelSettings) -> dict[str, Any]:
+    """What anyone may know about a channel the bot is in: its sign and tier, whether the bot speaks
+    there (`read_only`: "Bot speaks: off", it logs but never sends), may moderate, and shows its log."""
+    return {
+        "login": c.login,
+        "prefix": c.prefix,
+        "tier": c.tier,
+        "read_only": not c.bot_enabled,
+        "can_moderate": MODERATE in c.capabilities,
+        "logs_public": c.log_enabled and c.public_log,
+        "joined_at": c.added_at,
+    }
 
 
 @router.get("/site")
@@ -37,9 +53,7 @@ async def site(request: Request) -> dict[str, Any]:
         "syntax_version": SYNTAX_VERSION,
         "default_prefix": DEFAULT_PREFIX,
         "admin_enabled": bool(auth and auth.enabled),
-        "channels": [
-            {"login": c.login, "prefix": c.prefix, "tier": c.tier} for c in sorted(channels, key=lambda c: c.login)
-        ],
+        "channels": [_public(c) for c in sorted(channels, key=lambda c: c.login)],
     }
 
 
@@ -50,10 +64,8 @@ async def site_channel(request: Request, login: str) -> dict[str, Any]:
     `channel_id` is the Twitch user id (public on Twitch): the page loads the channel's emotes with it."""
     settings = _channel(request, login)
     return {
-        "login": settings.login,
+        **_public(settings),
         "channel_id": settings.channel_id,
-        "prefix": settings.prefix,
-        "tier": settings.tier,
         "status": settings.status,
         "active": settings.active,
     }

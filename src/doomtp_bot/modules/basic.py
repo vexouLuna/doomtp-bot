@@ -6,9 +6,10 @@ import hashlib
 import json
 import random
 
+from doomtp_bot.modules.services import services
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command
-from doomtp_bot.runtime.result import CommandError, ErrorCode, Result, Value
+from doomtp_bot.runtime.result import Code, CommandError, ErrorCode, Result, Value
 from doomtp_bot.runtime.spec import CommandSpec, Cooldown, Example, Param
 from doomtp_bot.runtime.values import ConversionError, convert, render
 
@@ -75,4 +76,29 @@ def seeded(seed: str) -> random.Random:
     return random.Random(int.from_bytes(hashlib.sha256(seed.encode("utf-8")).digest()[:8], "big"))
 
 
-COMMANDS: tuple[Command, ...] = (random_cmd,)
+@command(
+    CommandSpec(
+        name="latency",
+        module=MODULE,
+        summary="How long Twitch takes to answer the bot, in milliseconds",
+        description="Times one request to Twitch's API from the bot, so it is the bot's own round trip.",
+        data_schema={"": "int (milliseconds)"},
+        examples=(
+            Example("{sign}latency", "123ms"),
+            Example("{sign}latency | echo pong, {_}ms to Twitch", "pong, 123ms to Twitch"),
+        ),
+        default_cooldowns={"everyone": Cooldown(tier_s=5)},
+    )
+)
+async def latency_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result:
+    twitch = services(ctx).twitch
+    if twitch is None:
+        raise CommandError("not connected to Twitch", Code.FAIL)
+    try:
+        ms = await twitch.ping_ms()
+    except Exception as exc:  # any failure is "no answer" to the person asking
+        raise CommandError(f"Twitch didn't answer: {exc}", Code.FAIL) from exc
+    return Result.success(f"{ms}ms", ms)
+
+
+COMMANDS: tuple[Command, ...] = (random_cmd, latency_cmd)

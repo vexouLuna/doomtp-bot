@@ -110,6 +110,7 @@ class ExecContext:
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     expr_ops: int = 0  # expression steps so far this run (ADR-0018 D8k)
     subst_depth: int = 0  # `{!...}` invocations currently open
+    sent: list[str] = field(default_factory=list)  # lines a command sent itself (`mecho`), for the run log
 
     def ensure_not_cancelled(self) -> None:
         if self.is_cancelled():

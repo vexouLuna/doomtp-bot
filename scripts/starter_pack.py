@@ -64,7 +64,11 @@ def echo_or_custom(name: str, wording: str) -> str:
 
 
 STARTER: tuple[Derived, ...] = (
-    Derived(name="ping", summary="Check that the bot is alive", body="echo pong"),
+    Derived(
+        name="ping",
+        summary="Check that the bot is alive, and how fast Twitch answers it",
+        body="latency | echo pong, {_}ms to Twitch || echo pong",
+    ),
     Derived(
         name="hug",
         summary="Hug someone, or the whole chat",

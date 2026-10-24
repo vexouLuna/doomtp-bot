@@ -183,10 +183,16 @@ async def _apply_limits(request: Request, kind: str, owner_id: str, body: Limits
 async def variable_limits(request: Request, caller: Caller = ADMIN_READ) -> dict[str, Any]:
     store = deps.variable_store(request)
     defaults = await store.defaults()
+    known = {c.channel_id: c.login for c in request.app.state.policy.channels()}
     return {
         "defaults": _limits_json(defaults),
         "overrides": [
-            {"owner_kind": kind, "owner_id": owner_id, **_limits_json(o)}
+            {
+                "owner_kind": kind,
+                "owner_id": owner_id,
+                "owner_login": await _login_of(request, owner_id, known),  # the list shows people, not ids
+                **_limits_json(o),
+            }
             for kind, owner_id, o in await store.overrides()
         ],
     }

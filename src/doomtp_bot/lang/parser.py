@@ -312,6 +312,7 @@ class _Parser:
         self.depth = 0  # placeholders
         self.expr_depth = 0
         self.in_subst = 0
+        self.tight = 0  # glued `(…)` branches open around here (TightGroup, spec C.3)
         self.substs = 0  # `{!…}` invocations get -1, -2, … as they are met
         self.expr_line: Expr | None = None
 
@@ -356,6 +357,15 @@ class _Parser:
     def subst_end(self, at: int) -> bool:
         """Inside `{!…}`, a `}` ends the command."""
         return self.in_subst > 0 and self.s.startswith("}", at)
+
+    def tight_end(self, at: int) -> bool:
+        """TightClose: inside glued `(…)` branches, the last `)`s before WS/EOF close them, one each."""
+        if self.tight == 0 or not self.s.startswith(")", at):
+            return False
+        end = at
+        while end < self.n and self.s[end] == ")":
+            end += 1
+        return end - at <= self.tight and (self.boundary(end) or self.subst_end(end))
 
     # ── C.2 entry points ────────────────────────────────────────────────────
     def line_start(self) -> bool:
@@ -425,7 +435,8 @@ class _Parser:
             return self._error(ParseErrorCode.RESERVED_OPERATOR)
         if op is not None:
             return self._error(ParseErrorCode.UNEXPECTED_OPERATOR, op=op)
-        return self._error(ParseErrorCode.INTERNAL)
+        # Only an ifelse leaves words behind: an invocation reads every word up to an operator.
+        return self._error(ParseErrorCode.EXPR_SYNTAX, hint="ifelse ends after its ( else ) branch")
 
     def require_operand(self, op: str) -> None:
         """`_ EOF %E_MISSING_OPERAND`: skip spaces, and fail if the line ends where an operand must follow."""
@@ -491,7 +502,7 @@ class _Parser:
             raise self._error(ParseErrorCode.UNEXPECTED_OPERATOR, op=found)
         start = self.pos
         target = self.var_ref()
-        if not self.boundary(self.pos):
+        if not (self.boundary(self.pos) or self.tight_end(self.pos)):
             raise self._error(ParseErrorCode.BAD_VARREF, start)
         return target
 
@@ -512,7 +523,11 @@ class _Parser:
         self.pos += 1  # Open (boundary already checked by primary)
         # GroupInner <- WS Expr / _ EOF %E_MISSING_OPERAND
         self.require_operand("(")
-        inner = self.expr()
+        tight, self.tight = self.tight, 0  # a spaced group reads `)` as text again
+        try:
+            inner = self.expr()
+        finally:
+            self.tight = tight
         # GroupEnd <- WS Close / _ EOF %UNBALANCED / WS Reserved %RESERVED / WS OperatorToken %UNEXPECTED
         self.opt_ws()
         if self.eof():
@@ -536,14 +551,41 @@ class _Parser:
             raise self._error(ParseErrorCode.EXPR_SYNTAX, hint="ifelse needs a condition, then ( a command )")
         cond = self.word()
         self.require_operand("ifelse")
-        if self.operator_at(self.pos) != "(":
+        then = self.branch()
+        if then is None:
             raise self._error(ParseErrorCode.EXPR_SYNTAX, hint="ifelse needs ( a command ) after its condition")
-        then = self.group()
         save = self.pos
-        if self.ws() and self.operator_at(self.pos) == "(":
-            return IfElse(cond, then, self.group())
+        if self.ws() and (else_ := self.branch()) is not None:
+            return IfElse(cond, then, else_)
         self.pos = save
         return IfElse(cond, then, None)
+
+    def branch(self) -> Group | None:
+        """Branch <- Group / TightGroup    (a branch must be a group, so a glued `(` opens one too)"""
+        if self.operator_at(self.pos) == "(":
+            return self.group()
+        if self.s.startswith("(", self.pos) and not self.eof(self.pos + 1):
+            return self.tight_group()
+        return None
+
+    def tight_group(self) -> Group:
+        """TightGroup <- '(' Expr _ (TightClose / Close)    `(echo a)`: the `)` glued to the last word closes it"""
+        self.pos += 1
+        self.tight += 1
+        try:
+            inner = self.expr()
+            self.opt_ws()
+            if self.eof():
+                raise self._error(ParseErrorCode.UNBALANCED_GROUP)
+            if self.s.startswith(")", self.pos) and (self.tight_end(self.pos) or self.boundary(self.pos + 1)):
+                self.pos += 1
+                return Group(inner)
+        finally:
+            self.tight -= 1
+        op = self.operator_at(self.pos)
+        if op is None:
+            raise self._error(ParseErrorCode.UNBALANCED_GROUP)
+        raise self._operator_error(op)
 
     # ── C.4 invocations ─────────────────────────────────────────────────────
     def cmd_prefix(self) -> None:
@@ -562,7 +604,7 @@ class _Parser:
             end = start + 1
             while end < self.n and _is_name_char(self.s[end]):
                 end += 1
-            ok_end = self.boundary(end) or self.subst_end(end)
+            ok_end = self.boundary(end) or self.subst_end(end) or self.tight_end(end)
             if ok_end and end - start <= MAX_NAME_CHARS and not self.s[start:end].isdigit():
                 self.pos = end
                 return self.s[start:end].lower()
@@ -639,7 +681,7 @@ class _Parser:
             raise self._error(ParseErrorCode.EXPR_SYNTAX, start)
         after = self.pos
         self.opt_ws()
-        if self.eof() or self.operator_at(self.pos) is not None or self.subst_end(self.pos):
+        if self.eof() or self.operator_at(self.pos) is not None or self.subst_end(self.pos) or self.tight_end(self.pos):
             self.pos = after
             return expr
         raise self._stray()
@@ -692,6 +734,8 @@ class _Parser:
         """Word <- Segment+    Segment <- Quoted / Escape / Placeholder / Bare"""
         parts: list[Part] = []
         while self.pos < self.n and not is_ws(self.s[self.pos]) and not self.subst_end(self.pos):
+            if self.tight_end(self.pos):
+                break
             ch = self.s[self.pos]
             if ch == '"':
                 parts.extend(self.quoted())
@@ -706,6 +750,7 @@ class _Parser:
                     and not is_ws(self.s[self.pos])
                     and self.s[self.pos] not in '"\\{'
                     and not self.subst_end(self.pos)
+                    and not self.tight_end(self.pos)
                 ):
                     self.pos += 1
                 parts.append(Text(self.s[start : self.pos]))
@@ -774,10 +819,12 @@ class _Parser:
         """Subst <- '{!' Invocation _ '}'    (one command; its data, or else its message, is the value)"""
         self.pos += 1
         self.in_subst += 1
+        tight, self.tight = self.tight, 0
         try:
             inv = self.invocation()
         finally:
             self.in_subst -= 1
+            self.tight = tight
         self.opt_ws()
         if not self.s.startswith("}", self.pos):
             raise self._error(ParseErrorCode.BAD_PLACEHOLDER, start + 1, hint="{!…} runs one command and ends with }")
