@@ -288,11 +288,22 @@ def test_copies_of_a_moderation_event_go_keeping_the_earliest(empty_database: st
             " (1, 'c1', 'delete', 'm1', 'u1', 'eventsub', 1500, '{}', 'legacy'), (2, 'c1', 'delete', 'm1', 'u1', 'ivr-logs', 1400, '{}', 'legacy'),"
             " (3, 'c1', 'timeout', NULL, 'u1', 'eventsub', 2000, '{}', 'legacy'), (4, 'c1', 'timeout', NULL, 'u1', 'ivr-logs', 2000, '{}', 'legacy'),"
             " (5, 'c1', 'chat_clear', NULL, NULL, 'eventsub', 3000, '{}', 'legacy'), (6, 'c1', 'chat_clear', NULL, NULL, 'x', 3000, '{}', 'legacy'),"
-            " (7, 'c2', 'chat_clear', NULL, NULL, 'eventsub', 3000, '{}', 'legacy'), (8, 'c1', 'timeout', NULL, 'u1', 'eventsub', 2001, '{}', 'legacy')"
+            " (7, 'c2', 'chat_clear', NULL, NULL, 'eventsub', 3000, '{}', 'legacy'), (8, 'c1', 'timeout', NULL, 'u1', 'eventsub', 2001, '{}', 'legacy'),"
+            # The same ban backfilled from IRC, then seen live by EventSub 800 ms later; and a later timeout.
+            " (9, 'c1', 'user_clear', NULL, 'u2', 'ivr-logs', 4000, '{}', 'legacy'), (10, 'c1', 'ban', NULL, 'u2', 'eventsub', 4800, '{}', 'legacy'),"
+            " (11, 'c1', 'timeout', NULL, 'u1', 'eventsub', 9000, '{}', 'legacy')"
         )
+        conn.execute("UPDATE chatlog.mod_events SET moderator_user_id = 'mod1' WHERE id = 10")
     command.upgrade(schema.config("chatlog", empty_database), "0010")
     with psycopg.connect(empty_database) as conn:
-        assert [r[0] for r in conn.execute("SELECT id FROM chatlog.mod_events ORDER BY id")] == [2, 3, 5, 7, 8]
+        assert conn.execute("SELECT id, type, moderator_user_id FROM chatlog.mod_events ORDER BY id").fetchall() == [
+            (2, "delete", None),
+            (3, "timeout", None),
+            (5, "chat_clear", None),
+            (7, "chat_clear", None),
+            (9, "ban", "mod1"),
+            (11, "timeout", None),
+        ]
         with pytest.raises(psycopg.errors.UniqueViolation):
             conn.execute(
                 "INSERT INTO chatlog.mod_events (channel_id, type, target_user_id, at, raw, raw_format)"
