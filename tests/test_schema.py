@@ -277,3 +277,24 @@ def test_a_channel_with_many_quotes_gets_room_for_them(empty_database: str) -> N
     assert size is not None and limits is not None
     assert size[0] > 262_144 and limits[1] == 2 * size[0]
     assert limits[0] is None  # ~420 KB still fits the 1 MB quota
+
+
+def test_copies_of_a_moderation_event_go_keeping_the_earliest(empty_database: str) -> None:
+    """0010 deletes the copies backfill and redeliveries stored, keeps the first, and refuses new ones."""
+    command.upgrade(schema.config("chatlog", empty_database), "0009")
+    with psycopg.connect(empty_database) as conn:
+        conn.execute(
+            "INSERT INTO chatlog.mod_events (id, channel_id, type, message_id, target_user_id, source, at, raw, raw_format) VALUES"
+            " (1, 'c1', 'delete', 'm1', 'u1', 'eventsub', 1500, '{}', 'legacy'), (2, 'c1', 'delete', 'm1', 'u1', 'ivr-logs', 1400, '{}', 'legacy'),"
+            " (3, 'c1', 'timeout', NULL, 'u1', 'eventsub', 2000, '{}', 'legacy'), (4, 'c1', 'timeout', NULL, 'u1', 'ivr-logs', 2000, '{}', 'legacy'),"
+            " (5, 'c1', 'chat_clear', NULL, NULL, 'eventsub', 3000, '{}', 'legacy'), (6, 'c1', 'chat_clear', NULL, NULL, 'x', 3000, '{}', 'legacy'),"
+            " (7, 'c2', 'chat_clear', NULL, NULL, 'eventsub', 3000, '{}', 'legacy'), (8, 'c1', 'timeout', NULL, 'u1', 'eventsub', 2001, '{}', 'legacy')"
+        )
+    command.upgrade(schema.config("chatlog", empty_database), "0010")
+    with psycopg.connect(empty_database) as conn:
+        assert [r[0] for r in conn.execute("SELECT id FROM chatlog.mod_events ORDER BY id")] == [2, 3, 5, 7, 8]
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            conn.execute(
+                "INSERT INTO chatlog.mod_events (channel_id, type, target_user_id, at, raw, raw_format)"
+                " VALUES ('c1', 'timeout', 'u1', 2000, '{}', 'legacy')"
+            )

@@ -339,6 +339,8 @@ _SQL: dict[str, str] = {
     "mod_event": (
         "INSERT INTO mod_events (channel_id, type, message_id, target_user_id, moderator_user_id, source, raw,"
         " raw_format, at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        # Backfill and EventSub redeliveries offer the same event again; the first one wins.
+        " ON CONFLICT DO NOTHING"
     ),
     "flag_deleted": "UPDATE messages SET deleted_at = COALESCE(deleted_at, %s) WHERE message_id = %s",
     "flag_user_cleared": (

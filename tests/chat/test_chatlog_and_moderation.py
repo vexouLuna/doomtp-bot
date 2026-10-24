@@ -81,6 +81,24 @@ async def test_moderation_flags_never_delete_rows(dbs: Databases) -> None:
     ]
 
 
+async def test_a_moderation_event_offered_again_is_stored_once(dbs: Databases) -> None:
+    writer = ChatLogWriter(dbs.chatlog)
+    for source in ("eventsub", "ivr-logs", "ivr-logs"):  # a redelivery, then two backfills over the same gap
+        await writer.moderation(MessageDeleted("c1", "m1", "u1", at=1500, source=source))
+        await writer.moderation(UserMessagesCleared("c1", "u1", at=2200, duration_s=600, source=source))
+        await writer.moderation(ChatCleared("c1", at=2600, source=source))
+    await writer.moderation(MessageDeleted("c1", "m2", "u1", at=1500))  # another message, same moment
+    await writer.moderation(UserMessagesCleared("c1", "u1", at=3000))  # a second timeout later
+    await writer.stop()
+    assert await rows(dbs, "SELECT type, message_id, source, at FROM mod_events ORDER BY id") == [
+        ("delete", "m1", "eventsub", 1500),
+        ("user_clear", None, "eventsub", 2200),
+        ("chat_clear", None, "eventsub", 2600),
+        ("delete", "m2", "eventsub", 1500),
+        ("user_clear", None, "eventsub", 3000),
+    ]
+
+
 async def test_sessions_runs_and_outbound(dbs: Databases) -> None:
     writer = ChatLogWriter(dbs.chatlog)
     await writer.start_session("c1")

@@ -186,14 +186,18 @@ class _BotClient(twitchio.Client):
     async def event_chat_notification(self, payload: Any) -> None:
         await self.service.emit(payload.id, _with_raw(mapping.chat_notification(payload)))
 
+    # These payloads carry no id of their own, so a redelivery is known by what it says happened.
     async def event_message_delete(self, payload: Any) -> None:
-        await self.service.emit(None, _with_raw(mapping.message_deleted(payload)))
+        event = mapping.message_deleted(payload)
+        await self.service.emit(f"delete:{event.message_id}", _with_raw(event))
 
     async def event_chat_clear(self, payload: Any) -> None:
-        await self.service.emit(None, _with_raw(mapping.chat_cleared(payload)))
+        event = mapping.chat_cleared(payload)
+        await self.service.emit(f"chat_clear:{event.channel_id}:{event.at}", _with_raw(event))
 
     async def event_chat_clear_user(self, payload: Any) -> None:
-        await self.service.emit(None, _with_raw(mapping.user_messages_cleared(payload)))
+        event = mapping.user_messages_cleared(payload)
+        await self.service.emit(f"user_clear:{event.channel_id}:{event.target_user_id}:{event.at}", _with_raw(event))
 
     async def event_follow(self, payload: Any) -> None:
         await self.service.emit(None, _with_raw(mapping.follow(payload)))
