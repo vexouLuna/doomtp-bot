@@ -50,6 +50,7 @@ A multi-channel Twitch chat bot written in Python, self-hosted on a homelab in a
 | [ADR-0034](adr/0034-bot-event-triggers.md) | Triggers on the bot's own events |
 | [ADR-0035](adr/0035-twitch-user-lookup-for-chat-cards.md) | A Twitch user lookup for the sites' chat user cards |
 | [ADR-0036](adr/0036-remove-the-view-as-preview.md) | Remove the View as preview |
+| [ADR-0037](adr/0037-listed-forms-switch-results-and-format.md) | Listed forms, `switch`, multi-branch `ifelse`, returned fields and `format` |
 
 ---
 
