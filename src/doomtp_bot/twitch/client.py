@@ -788,6 +788,13 @@ class TwitchService:
             return cached
         return await self._fetch_user(login, logins=[login])
 
+    async def logins_by_id(self, user_ids: Sequence[str]) -> dict[str, str]:
+        """Current logins for up to 100 user ids; ids Twitch doesn't know are left out."""
+        if self.client is None or not user_ids:
+            return {}
+        users = await self.client.fetch_users(ids=list(user_ids), token_for=self.bot_id)
+        return {u.id: self._remember(u.id, u.name, u.display_name or u.name)["name"] for u in users if u.name}
+
     async def resolve_user_id(self, user_id: str) -> dict[str, str] | None:
         login = self._logins_by_id.get(user_id)
         if login is not None and login in self._users_by_login:

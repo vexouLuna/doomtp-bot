@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, NamedTuple
 
 import structlog
@@ -75,6 +75,15 @@ class PolicyService:
                 result = await result
             await self.reload()
             return result
+
+    async def sync_logins(self, users: Mapping[str, str]) -> list[str]:
+        """Follow Twitch renames by id (see PolicyRepository.sync_logins). Returns the renamed channels."""
+        users = {user_id: login.lower() for user_id, login in users.items() if user_id and login}
+        if not users:
+            return []
+        renamed = await self.mutate(lambda repo: repo.sync_logins(users))
+        assert isinstance(renamed, list)
+        return renamed
 
     # ── channels and chatters ───────────────────────────────────────────────
     def channels(self) -> list[ChannelSettings]:

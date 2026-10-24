@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import secrets
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 from urllib.parse import urlencode, urlsplit
@@ -125,6 +125,8 @@ class Policy(Protocol):
 
     def channels(self) -> list[Any]: ...
 
+    async def sync_logins(self, users: Mapping[str, str]) -> list[str]: ...
+
 
 def access_for(policy: Policy, user_id: str, moderated: Iterable[str]) -> Access:
     """An admin, a moderator of the joined channels that are theirs or that they moderate, or a user who
@@ -218,6 +220,9 @@ class TwitchSignIn:
             raise SignInError("twitch", "missing authorization code")
         try:
             grant = await self.redeem(code)
+            # A rename on Twitch shows up here first for the people who sign in, so their channel's
+            # login (and the role lists that name them) follow before the session lists it.
+            await self.policy.sync_logins({grant.user_id: grant.login})
             access = await self.access(grant)
         except (OAuthError, aiohttp.ClientError) as exc:
             raise SignInError("twitch", str(exc)) from exc
