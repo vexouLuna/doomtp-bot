@@ -553,3 +553,22 @@ async def test_random_on_an_empty_collection_fails_with_e_empty() -> None:
 async def test_random_rejects_something_that_is_neither_a_range_nor_a_collection() -> None:
     r = await run(make_runtime(), "!random banana")
     assert r.result.code == Code.USAGE and "list or map" in (r.send or "")
+
+
+# ── result (ADR-0037 G9) ───────────────────────────────────────────────────
+async def test_result_returns_fields_and_its_message() -> None:
+    r = await run(make_runtime(), "!weather Lisbon | result c={_[celsius]} town=Lisbon -- {_[celsius]}°C")
+    assert r.send == "21.5°C"
+    assert r.result.data == {"c": 21.5, "town": "Lisbon", "message": "21.5°C"}  # a lone placeholder keeps its type
+
+
+async def test_result_takes_the_piped_message_without_one_of_its_own() -> None:
+    r = await run(make_runtime(), "!echo hi | result n=1")
+    assert (r.send, r.result.data) == ("hi", {"n": "1", "message": "hi"})
+    r = await run(make_runtime(), "!result n=1")
+    assert (r.send, r.result.data) == (None, {"n": "1", "message": None})
+
+
+async def test_result_refuses_a_message_key_and_a_word_without_a_key() -> None:
+    for line in ("!result message=hi", "!result n=1 oops"):
+        assert (await run(make_runtime(), line)).result.code == Code.USAGE

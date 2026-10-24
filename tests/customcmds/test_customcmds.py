@@ -540,6 +540,13 @@ async def test_help_lists_custom_commands_the_caller_can_run(h: Harness) -> None
     assert alices is not None and "custom: hype" in alices  # her own alias
 
 
+async def test_help_explains_a_form(h: Harness) -> None:
+    """`ifelse` isn't a command, but a reader asks `!help` about it as if it were (ADR-0037)."""
+    detail = await h.say("bob", "!help switch")
+    assert detail is not None and detail.startswith("switch <value> <case> ( then )")
+    assert await h.say("bob", '!help "&&"') == "a && b: Then: run b only if a succeeded"
+
+
 # ── what the service checks, whoever calls it ──────────────────────────────
 async def test_the_service_checks_a_body_before_storing_it(dbs: Databases) -> None:
     """Chat, the API or a future editor: every caller gets the checks `cc add` used to make on its own."""

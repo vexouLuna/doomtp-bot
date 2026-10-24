@@ -259,6 +259,27 @@ def invocations(node: Node) -> list[Invocation]:
     raise TypeError(f"not an AST node: {node!r}")
 
 
+def endings(node: Node) -> list[Invocation | None]:
+    """The invocations whose result can be the expression's when it succeeds: the right side of `|` and
+    `&&`, both sides of `||`, every branch of `ifelse` and `switch`. None is a missing else or default,
+    which returns nothing (ADR-0037 G9)."""
+    match node:
+        case Invocation():
+            return [node]
+        case And(_, right) | Pipe(_, right):
+            return endings(right)
+        case Or(left, right):
+            return endings(left) + endings(right)
+        case Group(inner) | Store(inner, _, _):
+            return endings(inner)
+        case IfElse(_, then, else_):
+            return endings(then) + (endings(else_) if else_ is not None else [None])
+        case Switch(_, cases, default):
+            found = [e for _, branch in cases for e in endings(branch)]
+            return found + (endings(default) if default is not None else [None])
+    raise TypeError(f"not an AST node: {node!r}")
+
+
 def stores(node: Node) -> list[Store]:
     """Every variable write in the expression, in source order."""
     match node:

@@ -60,6 +60,7 @@ from doomtp_bot.runtime.result import (
 from doomtp_bot.runtime.values import (
     MISSING,
     ConversionError,
+    Keyed,
     convert,
     descend,
     is_missing,
@@ -461,6 +462,14 @@ class Executor:
             if expanded is not None:
                 expanded[ph.span] = render(value)
             return value
+        if _is_keyed(arg):  # `key={…}`: text, but `result` keeps the value (ADR-0037)
+            key: Text = arg[0]  # type: ignore[assignment]
+            ph = arg[1]  # type: ignore[assignment]
+            value = await self.placeholder_value(ph, ctx, scope, prev)
+            text = render(value)
+            if expanded is not None:
+                expanded[ph.span] = text
+            return Keyed(key.value + text, value)
         return await self.expand(arg, ctx, scope, prev, expanded)
 
     async def condition(self, cond: tuple[Part, ...], ctx: ExecContext, scope: Scope, prev: Result | None) -> Any:
@@ -760,6 +769,18 @@ def store_key(value: Any) -> str | int:
 
 def _is_lone(arg: tuple[Part, ...]) -> bool:
     return len(arg) == 1 and isinstance(arg[0], Placeholder)
+
+
+KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _is_keyed(arg: tuple[Part, ...]) -> bool:
+    return (
+        len(arg) == 2
+        and isinstance(arg[0], Text)
+        and KEY_RE.fullmatch(arg[0].value) is not None
+        and isinstance(arg[1], Placeholder)
+    )
 
 
 class UsageError(Exception):

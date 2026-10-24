@@ -671,7 +671,7 @@ A reference is **missing** when:
 
 ## 8. Sentinel commands
 
-They can't be disabled or shadowed, have no cooldowns, require role `everyone`, are logged at level `off`, and **count toward `MAX_INVOCATIONS`**. `true`, `fail` and `echo` are primitives in the `core` module. `false` and `default` are **derived**: custom commands in the bot-owned `core` system pack (§5.1 step 2), whose bodies may call only other sentinels. A call to a derived sentinel doesn't count toward `MAX_CC_DEPTH`.
+They can't be disabled or shadowed, have no cooldowns, require role `everyone`, are logged at level `off`, and **count toward `MAX_INVOCATIONS`**. `true`, `fail`, `echo` and `result` are primitives in the `core` module. `false` and `default` are **derived**: custom commands in the bot-owned `core` system pack (§5.1 step 2), whose bodies may call only other sentinels. A call to a derived sentinel doesn't count toward `MAX_CC_DEPTH`.
 
 | Derived sentinel | Body |
 |------------------|------|
@@ -685,11 +685,13 @@ They can't be disabled or shadowed, have no cooldowns, require role `everyone`, 
 | `default` | `arg.1+ : str` (required) | `code 0`, `message = data = arg.1+` |
 | `fail` | `arg.1 : int` (optional, 1–99, default 1), `arg.2+ : str` (optional) | `code = arg.1`, `message = arg.2+` or null, `data = null`. If the first argument isn't an int, all arguments form the message and the code is 1. |
 | `echo` | `arg.1+ : str` (optional) | `code 0`, `message = data = arg.1+` (the empty string if no arguments) |
+| `result` | `key=value …`, then optionally `--` and a message (ADR-0037) | `code 0`, `data` = a map of each key to its value, plus `message`; a value written `key={…}` with one placeholder keeps its type, anything else is text. `message` = the words after `--`, or stdin's message without them, or null. A word without `key=`, or the key `message`, is code 2. A custom command's Returns table (`data_schema`) is read from the `result` stages its body can end in: the union of their keys, `key?` for one that not every ending returns. |
 
 Idioms:
 - **Optional command:** `!shoutout {arg.1} || true`
 - **Fallback value:** `( !logsearch {arg.1+} || default unknown ) -> chatter.last_search`
 - **Validation:** `check {arg.1:int} <= 20 || fail 2 max 20 dice`
+- **Named fields:** `weather {arg.1} | result c={_[celsius]} -- {_[celsius]}°C`, then a caller reads `{_[c]}`
 
 ### 8.1 Expression commands
 
@@ -727,7 +729,7 @@ The operator commands read each argument like a literal: a number, `true`/`false
 - A missing value, or a missing case value reached before a match, fails with 230 and runs no branch.
 - `switch` with no case is `E_EXPR_SYNTAX`, and so is a case value with no branch after it.
 - Branches are groups, glued or spaced, as in `ifelse`. Preflight checks every branch, and a command in one is refused only if its branch is chosen. For `MAX_INVOCATIONS` a `switch` counts as its largest branch, as an `ifelse` does.
-- `ifelse` and `switch` are listed beside the commands (`/api/v1/commands` with `kind: "form"`, `!help ifelse`), and no custom command may take their names.
+- `ifelse`, `switch` and the operators are listed beside the commands (`/api/v1/commands` with `kind: "form"`, `!help switch`), and no custom command may be named `ifelse` or `switch`.
 
 ---
 

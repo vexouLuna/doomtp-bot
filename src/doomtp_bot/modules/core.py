@@ -7,9 +7,9 @@ from typing import Any
 from doomtp_bot.runtime import ops
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command
-from doomtp_bot.runtime.result import Code, Result
+from doomtp_bot.runtime.result import Code, CommandError, Result
 from doomtp_bot.runtime.spec import CommandSpec, Example, InputMode, LogLevel, Param
-from doomtp_bot.runtime.values import render
+from doomtp_bot.runtime.values import Keyed, render
 
 MODULE = "core"
 
@@ -155,9 +155,46 @@ OPERATORS: tuple[Command, ...] = (
     _operator("or", "or", ("0", "none")),
 )
 
+
+@command(
+    _spec(
+        name="result",
+        data_schema={"": "{<key>: any, message: str?}: the fields given, and the message"},
+        summary="End a custom command with named fields and a message",
+        description=(
+            "Each key=value becomes a field; a value that is one placeholder keeps its type. The words after "
+            "-- are the message; without them it is the message piped in. The message is also the field "
+            "message, so give it after --, not as a key. A caller reads the fields as {_[key]}."
+        ),
+        params=(Param("1+", "fields", description="key=value … [-- message]"),),
+        examples=(
+            Example("{sign}result n=1 -- one", "one"),
+            Example("{sign}weather Lisbon | result c={_[celsius]} -- {_[celsius]}°C", "21.5°C"),
+        ),
+    )
+)
+async def result_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result:
+    values = list(args.values)
+    message: str | None = stdin.message if stdin is not None else None
+    if "--" in values:
+        at = values.index("--")
+        message = " ".join(values[at + 1 :]) or None
+        values = values[:at]
+    fields: dict[str, Any] = {}
+    for word in values:
+        key, eq, text = word.partition("=")
+        if not eq or not key.isidentifier():
+            raise CommandError(f"usage: {ctx.channel.prefix}result key=value … [-- message] (not {word})")
+        if key == "message":
+            raise CommandError("the message goes after --, not in message=")
+        fields[key] = word.value if isinstance(word, Keyed) else text
+    return Result.success(message, {**fields, "message": message})
+
+
 COMMANDS: tuple[Command, ...] = (
     true_cmd,
     fail_cmd,
+    result_cmd,
     echo_cmd,
     check_cmd,
     calc_cmd,
