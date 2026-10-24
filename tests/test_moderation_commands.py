@@ -17,11 +17,11 @@ from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.runtime.context import Args, ChannelInfo, CommandContext
-from doomtp_bot.runtime.engine import RunReport, Runtime
+from doomtp_bot.runtime.engine import RunReport, Runtime, should_log_run
 from doomtp_bot.runtime.explain import explain
 from doomtp_bot.runtime.registry import command
 from doomtp_bot.runtime.result import Code, Result
-from doomtp_bot.runtime.spec import CommandSpec, Param
+from doomtp_bot.runtime.spec import CommandSpec, LogLevel, Param
 from doomtp_bot.runtime.variables import ANY, InMemoryVariableStore, WriteOp, key_for
 from doomtp_bot.storage.db import Databases
 from tests.fakes import policy_with_channels
@@ -254,6 +254,9 @@ async def test_mecho_says_each_quoted_line_as_its_own_message(h: Harness) -> Non
     report = await h.run("mod", '!mecho "hi {$chatter.display}" "second line"  "third"')
     assert report.result.code == 0 and report.send is None
     assert h.outbox.sent == [(CHANNEL_ID, "hi Mod"), (CHANNEL_ID, "second line"), (CHANNEL_ID, "third")]
+    # It sends the lines itself, so its message stays empty; the run log reads what it sent.
+    assert report.result.message is None and report.logged_message == "hi Mod\nsecond line\nthird"
+    assert should_log_run(report, LogLevel.OUTPUT)
 
 
 async def test_mecho_takes_at_most_ten_lines(h: Harness) -> None:

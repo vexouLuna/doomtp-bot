@@ -362,7 +362,7 @@ class Dispatcher:
             expr=report.expr,
             resolved=resolved,
             code=report.result.code,
-            message=report.result.message,
+            message=report.logged_message,
             duration_ms=report.duration_ms,
             cancelled_reason="moderated" if report.cancelled else None,
             run_ref=run_ref,
