@@ -631,6 +631,9 @@ async def test_storage_limits_are_set_like_admin_quota(client: httpx.AsyncClient
         "names_per_space": 200,
     }
 
+    listed = (await client.get("/api/v1/variable-limits", headers=headers)).json()["overrides"]
+    assert [(o["owner_id"], o["owner_login"]) for o in listed] == [(CHANNEL_ID, CHANNEL_LOGIN)]
+
     reset = await client.patch(
         f"/api/v1/variable-limits/channel/{CHANNEL_LOGIN}",
         headers=headers,
