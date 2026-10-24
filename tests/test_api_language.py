@@ -119,6 +119,16 @@ async def test_commands_lists_the_built_ins_with_their_usage(client: httpx.Async
     assert by_name["help"]["usage"] == "help [command]"
     assert by_name["role"]["required_role"] == "moderator"
     assert by_name["random"]["params"][0]["name"]
+    assert by_name["random"]["kind"] == "command"
+
+
+async def test_commands_lists_the_forms_beside_the_commands(client: httpx.AsyncClient) -> None:
+    """ADR-0037: grammar, listed where a reader looks for commands, with its syntax as the usage."""
+    by_name = {c["name"]: c for c in (await client.get("/api/v1/commands")).json()["commands"]}
+    assert {"ifelse", "switch", "|", "&&", "||", "->", "-->"} <= {n for n, c in by_name.items() if c["kind"] == "form"}
+    switch = by_name["switch"]
+    assert switch["usage"].startswith("switch <value> <case> ( then )")
+    assert switch["fixed_policy"] and not switch["toggleable"]
 
 
 async def test_the_language_api_is_unavailable_without_a_runtime() -> None:
