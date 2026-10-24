@@ -425,6 +425,6 @@ async def test_anyone_may_ignore_themselves_but_only_moderators_manage_the_list(
 def test_the_settings_table_the_snapshot_and_the_api_agree() -> None:
     """One list of channel settings (policy/settings.py): the snapshot carries each, the API's patch body
     accepts exactly those, and the repository writes them and the bot's own columns, nothing else."""
-    snapshot = {f.name for f in dataclasses.fields(ChannelSettings)} - {"channel_id", "login"}
+    snapshot = {f.name for f in dataclasses.fields(ChannelSettings)} - {"channel_id", "login", "added_at"}
     assert set(ChannelPatch.model_fields) == set(CHANNEL_SETTINGS)
     assert snapshot == set(CHANNEL_COLUMNS) and not BOT_COLUMNS & CHANNEL_SETTINGS.keys()
