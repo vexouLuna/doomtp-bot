@@ -38,6 +38,7 @@ class ChannelSettings:
     publish_min_role: str = "moderator"
     create_min_role: str = "everyone"
     var_admin_role: str = "moderator"
+    added_at: int = 0  # ms epoch: when the bot first joined it (a rejoin keeps it)
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +113,7 @@ async def load_snapshot(conn: Connection) -> PolicySnapshot:
                 tier=r["tier"],
                 capabilities=frozenset(json.loads(r["capabilities"] or "[]")),
                 prefix=r["prefix"],
+                added_at=r["added_at"],
                 reply_hold_ms=r["reply_hold_ms"],
                 log_enabled=r["log_enabled"],
                 bot_enabled=r["bot_enabled"],
