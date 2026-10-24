@@ -1,6 +1,6 @@
 # ADR-0037: Listed forms, `switch`, multi-branch `ifelse`, returned fields and `format`
 
-**Status:** Proposed, 2026-10-23 (draft for review; nothing here is built yet)
+**Status:** Accepted, 2026-10-24
 **Date:** 2026-10-23
 **Deciders:** Project owner
 
@@ -55,7 +55,7 @@ special-cases them by name (`ExprArgs` in §C.4) because their argument is an ex
    `/api/v1/commands/{name}` works for it. Parser, executor and preflight don't change.
 3. **Document them only** (a docs section, G3's fallback).
 
-**Recommendation: option 2.** To a user it is a command in every place they look; inside, it keeps the
+**Decision: option 2.** To a user it is a command in every place they look; inside, it keeps the
 guarantees above. The forms listed: `ifelse`, `switch`, and the operators as one entry each
 (`|`, `&&`, `||`, `( … )`, `->`, `-->`) so the reference has somewhere to explain them.
 
@@ -82,9 +82,10 @@ IfElse   <- CmdPrefix? 'ifelse' Boundary IfCond IfThen (WS IfCond IfThen)* (WS B
 switch {subject} {v1} ( b1 ) {v2} ( b2 ) … ( default )
 ```
 
-- `subject` is evaluated once and rendered to text (§7.6); each case value is rendered too, and the
-  first that is **exactly equal, case-sensitive** wins. Rendering both sides makes `switch {arg.1} 1 (…)`
-  match whether `arg.1` came in as text or a number.
+- `subject` is evaluated once; each case value is evaluated in turn and the first that is **equal as a
+  value**, by the same rule as `==` in an expression (§7.4), wins. So `1` matches `1.0`, and
+  `switch {arg.1} 1 (…)` matches whether `arg.1` came in as the text `1` or the number. Text compares
+  case-sensitively, as `==` does.
 - Case values are evaluated only until a match, so `{!…}` in a later case doesn't run.
 - A lone last group is the default. No match and no default: success with no output, like `ifelse`.
 - A missing subject fails with 230 and runs nothing. `switch {x}` with no case is a parse error.
@@ -109,8 +110,10 @@ result <key>=<value> … [-- <message…>]
 ```
 
 - Each `key=value` word becomes a field; the key is an ident, and a value that is a single placeholder
-  keeps its type (like a param of type `any`). The words after `--` are the message; without them the
-  message is null.
+  keeps its type (like a param of type `any`). The words after `--` are the message. Without them, the
+  message is the one piped in, so `echo hi | result n=1` still says `hi`; with neither, it is null.
+- The message is also the field `message`, always present (null when there is none), so a caller reading
+  the map gets the text too. `message=…` as a key is refused (E_USAGE): the message goes after `--`.
 - Like the other sentinels: no policy, logged at `off`, counts toward `MAX_INVOCATIONS`; data is
   limited by `MAX_DATA_BYTES`.
 
@@ -130,13 +133,27 @@ Its callers:
 
 (The `,` in the request is `|` here: the right side reads the left's result as `_`.)
 
-**Docs.** When a body ends in `result`, its keys are known from the text, so the bot infers the custom
-command's `data_schema` (`{celsius: any, rain: any}`) and the reference shows the same "Returns" table
-it shows for built-ins, with no field to fill in. A body whose data comes from elsewhere shows no table.
+**Docs.** The bot infers a custom command's `data_schema` from its body and the reference shows the same
+"Returns" table it shows for built-ins, with no field to fill in.
 
-## G11: `format`
+A body can end in more than one place: each branch of an `ifelse` or `switch`, and the right side of an
+`||`. The owner asked whether to force a single `result` at the end so every branch pipes into it. That
+would make the common case awkward (`ifelse {c} ( result a=1 ) ( result a=2 )` would have to become
+`ifelse {c} ( echo 1 ) ( echo 2 ) | result a={_}`, which can't give the branches different fields), and
+the schema can be read without it:
 
-A core command, so it is listed, completed and documented like any other:
+- The **endings** of a body are its last stages: through `|`, `&&` and groups to the right side, into
+  every branch of `ifelse` and `switch` (including the missing else, which returns nothing), and both
+  sides of `||`.
+- The Returns table is the **union** of the keys of the endings that are a `result`, plus `message`. A
+  key that not every ending returns is marked **sometimes**, so the table says honestly what a caller can
+  rely on.
+- A body with no `result` ending shows no table.
+
+## G11: `format`, and the same as accessors
+
+Both: a core command for a whole value, listed, completed and documented like any other, and accessors
+for formatting inside a placeholder.
 
 | Form | Example | Says |
 |------|---------|------|
@@ -147,9 +164,11 @@ A core command, so it is listed, completed and documented like any other:
 | `format percent <value> [decimals]` | `format percent 0.4567 1` | `45.7%` |
 | `format ordinal <value>` | `format ordinal 22` | `22nd` |
 
-- `time` and `ago` take epoch seconds or ISO 8601 text, in the channel's timezone. Pattern tokens:
-  `YYYY YY MM MMM MMMM DD D ddd dddd HH H hh mm ss A`, everything else literal; default `YYYY-MM-DD HH:mm`.
-  Not strftime: `%` reads as a modulo to people who write expressions.
+- `time` and `ago` take epoch seconds or ISO 8601 text, in the channel's timezone. Pattern tokens are
+  Moment-style: `YYYY YY MM MMM MMMM DD D ddd dddd HH H hh mm ss A`, everything else literal; default
+  `YYYY-MM-DD HH:mm`. Not strftime: `%` reads as a modulo to people who write expressions.
+- The accessors are the same six: `{x:time}`, `{x:time(DD MMM HH:mm)}`, `{x:ago}`, `{x:duration}`,
+  `{x:number(2)}`, `{x:percent(1)}`, `{x:ordinal}`. A pattern runs to the closing `)`.
 - `message` is the text and `data` the same text, so `-> channel.x` stores it.
 - A value that isn't a number or a time fails with 232 (`E_TYPE`).
 
@@ -166,16 +185,22 @@ A core command, so it is listed, completed and documented like any other:
 2. Multi-branch `ifelse` (parser, spec C.3, railroad, corpus).
 3. `switch` (parser, AST, executor, preflight, explain, spec §8.3, corpus, editor).
 4. `result` primitive and the inferred `data_schema`; "Returns" tables in doomtp-web.
-5. `format` command.
+5. `format` command and the six accessors.
 6. Before 3–5: count custom commands named `switch`, `result` or `format` in production.
 
-## Open questions
+## Decisions
 
-1. **G7:** forms listed beside commands (recommended), real commands with an index migration, or docs
-   only?
-2. **G1:** compare rendered text (recommended), or compare values so `1` and `1.0` match?
-3. **G9:** a `result` primitive with `key=value` words (recommended), or map literals inside expressions
-   (`{ {celsius: _[temp_c]} }`, harder to read next to placeholders)?
-4. **G9:** infer the "Returns" table from the body (recommended), or let the owner write one?
-5. **G11:** a `format` command (recommended), or accessors (`{$now.unix:time("DD MMM")}`), or both?
-6. **G11:** Moment-style pattern tokens (recommended) or strftime `%Y-%m-%d`?
+The owner answered the open questions on 2026-10-24:
+
+1. **G7:** forms stay in the grammar, listed beside commands with `kind = "form"`.
+2. **G1:** `switch` compares values, so `1` matches `1.0` (the draft recommended rendered text).
+3. **G9:** the `result key=value … -- message` primitive, with the message always in the `message`
+   field.
+4. **G9:** the Returns table is inferred from the body: the union of every ending's keys, a key some
+   endings lack marked "sometimes" (see G9 above).
+5. **G11:** both a `format` command and accessors.
+6. **G11:** Moment-style pattern tokens.
+
+Before reserving `switch`, `result` and `format`, the public API was checked on 2026-10-24: no channel
+publishes a command by those names and no pack has one. Personal aliases and unpublished commands aren't
+public, so a bot admin should run the count in action item 6 before the release.
