@@ -327,6 +327,15 @@ async def test_a_name_is_not_only_digits(h: Harness) -> None:
     assert await h.say("alice", "!8ball") == "yes"
 
 
+async def test_a_name_is_not_a_form(h: Harness) -> None:
+    """`!switch …` and `!ifelse …` always parse as the forms (ADR-0037), so no command takes their names."""
+    from doomtp_bot.customcmds.service import CustomCommandError
+
+    for name in ("switch", "ifelse"):
+        with pytest.raises(CustomCommandError, match="part of the command language"):
+            await h.add("alice", name, "echo 1")
+
+
 async def test_bodies_are_parsed_in_body_context(h: Harness) -> None:
     """`{arg.*}` is only available inside a body, so a body may use it and a typed line may not."""
     await h.add("alice", "args", "echo you said {arg.1+ ?? nothing}")

@@ -36,6 +36,7 @@ from doomtp_bot.lang.ast import (
     Span,
     Store,
     Subst,
+    Switch,
     Text,
     Unary,
     VarRef,
@@ -249,6 +250,20 @@ class Executor:
                 if branch is None:
                     return Result.success()
                 return await self._eval(branch, ctx, scope, prev, stdin)
+            case Switch(subject, cases, default):
+                # The subject once, then each case value until one equals it, as `==` does (ADR-0037).
+                try:
+                    value = await self.argument(subject, ctx, scope, prev)
+                    picked = default
+                    for case, group in cases:
+                        if ops.compare("==", value, await self.argument(case, ctx, scope, prev)):
+                            picked = group
+                            break
+                except (MissingValue, ExprError, SubstFailed) as exc:
+                    return expression_failure(exc)
+                if picked is None:
+                    return Result.success()
+                return await self._eval(picked, ctx, scope, prev, stdin)
             case Store(inner, target, append):
                 r = await self._eval(inner, ctx, scope, prev, stdin)
                 if not r.ok:

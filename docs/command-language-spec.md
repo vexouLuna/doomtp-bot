@@ -202,9 +202,12 @@ expr        = logical ;
 logical     = pipeline , { WS , ( "&&" | "||" ) , WS , pipeline } ;
 pipeline    = stage , { WS , "|" , WS , stage } ;
 stage       = primary , [ WS , ( "->" | "-->" ) , WS , varref ] ;
-primary     = group | ifelse | invocation ;
+primary     = group | ifelse | switch | invocation ;
 group       = "(" , WS , expr , WS , ")" ;
-ifelse      = [ prefix , [ prefix_gap ] ] , "ifelse" , WS , word , WS , group , [ WS , group ] ;   (* §8.2 *)
+ifelse      = [ prefix , [ prefix_gap ] ] , "ifelse" , WS , word , WS , group ,
+              { WS , word , WS , group } , [ WS , group ] ;                         (* §8.2 *)
+switch      = [ prefix , [ prefix_gap ] ] , "switch" , WS , word ,
+              WS , word , WS , group , { WS , word , WS , group } , [ WS , group ] ;   (* §8.3 *)
 invocation  = [ prefix , [ prefix_gap ] ] , name , ( WS , expression     (* check, calc: §8.1 *)
                                                    | { WS , word } , [ raw_tail ] ) ;
 word        = chunk ;                                  (* §2.3, not an operator token *)
@@ -307,14 +310,15 @@ A line that fails any of the three conditions is parsed as usual. `!100` alone i
 The parser MUST produce this AST. It is the stable contract with the runtime, and later syntax versions MUST map onto it or extend it.
 
 ```python
-Node = And | Or | Pipe | Group | Store | IfElse | Invocation
+Node = And | Or | Pipe | Group | Store | IfElse | Switch | Invocation
 
 And(left: Node, right: Node)
 Or(left: Node, right: Node)
 Pipe(left: Node, right: Node)
 Group(inner: Node)
 Store(inner: Node, target: VarRef, append: bool)
-IfElse(cond: Arg, then: Group, else_: Group | None)
+IfElse(cond: Arg, then: Group, else_: Group | None)   # more conditions nest: else_ = Group(IfElse(…))
+Switch(subject: Arg, cases: list[(value: Arg, branch: Group)], default: Group | None)
 Invocation(index: int,               # 1-based, pre-order source order within the scope (§6.4);
                                      # -1, -2, … for a {!…} substitution
            name: str, personal: bool,
@@ -466,6 +470,7 @@ Each block leaves gaps for related errors, and the rest of 100–1023 is free fo
 | `Group(E)` | `eval(E, prev)`: the result of the last invocation executed inside. |
 | `Store(E, target, append)` | `r = eval(E, prev)`. If `r.code = 0`, evaluate the target's bracket keys with `_` = r and buffer the write (§6.5). Return `r` unchanged, or the write's error. |
 | `IfElse(C, T, E)` | Expand the condition `C` like an argument with `_` = prev. If it is missing, or its expansion fails, return that failure and run neither branch. If it holds (§7.8), return `eval(T, prev)`; otherwise return `eval(E, prev)`, or `Result(0, null, null)` when there is no `E`. The chosen branch receives this node's stdin. |
+| `Switch(S, cases, D)` | Expand the subject `S` like an argument with `_` = prev, then each case value in order, stopping at the first equal to it by the rule of `==` (§7.8): numbers as numbers, so `1` matches `1.0`, anything else as text, case-sensitively. If the subject or a case value expanded before the match is missing, or its expansion fails, return that failure and run no branch. Return `eval(branch, prev)` for the matching case; with none, `eval(D, prev)`, or `Result(0, null, null)` when there is no `D`. The chosen branch receives this node's stdin. |
 
 - **Pipe vs. and:** both stop on failure and both expose the left result as `_`. Only a pipe *also* delivers it as `stdin` to the command. Commands that accept input act on `stdin` without placeholders (e.g. `!upper`).
 - **Pipe stdin into a group:** `L | ( A && B )` delivers stdin to the **first invocation evaluated** inside the group, which is `A`.
@@ -703,13 +708,26 @@ The operator commands read each argument like a literal: a number, `true`/`false
 
 ### 8.2 `ifelse`
 
-`ifelse condition ( then … ) [ ( else … ) ]` is a special form in the grammar (§3.1), not a command: it has no permission, cooldown or index of its own. The condition is one argument, usually a placeholder: `!ifelse {channel.deaths > 10} ( echo rough day ) ( echo going well )`. Evaluation is in §6.3.
+`ifelse condition ( then … ) [ condition ( then … ) … ] [ ( else … ) ]` is a special form in the grammar (§3.1), not a command: it has no permission, cooldown or index of its own. The condition is one argument, usually a placeholder: `!ifelse {channel.deaths > 10} ( echo rough day ) ( echo going well )`. Evaluation is in §6.3.
+
+- More conditions may follow the first branch, each with its own branch: `!ifelse {x > 10} ( echo lots ) {x > 0} ( echo some ) ( echo none )`. They are tried in order and the first that holds runs its branch; a lone last group is the else. The parser nests them (§4), so a later condition is evaluated only when every one before it failed.
 
 - A missing condition fails with 230 and runs neither branch, like `check`. Choose a default with `??`: `{channel.deaths ?? 0}`.
 - The branches are groups and hold whole expressions, including stores and nested `ifelse`. The parentheses may be glued to the words inside: `(echo a)` works like `( echo a )` (§2.3).
-- Anything after the else branch is `E_EXPR_SYNTAX`, hint `ifelse ends after its ( else ) branch`.
+- Anything after the else branch is `E_EXPR_SYNTAX`, hint `ifelse and switch end after their last ( … ) branch`. So is a condition with no branch after it.
 - Without an else branch, a false condition gives success with no output.
 - A command in a branch is refused only if its branch is chosen (§6.3), which is what lets the condition guard a command not everyone may run.
+
+### 8.3 `switch`
+
+`switch value case ( then … ) [ case ( then … ) … ] [ ( default … ) ]` is a special form like `ifelse` (ADR-0037): no permission, cooldown or index of its own. `!random 1-3 | switch {_} 1 ( echo one ) 2 ( echo two ) ( echo three )`. Evaluation is in §6.3.
+
+- The value is evaluated once; each case value is evaluated in turn until one equals it, as `==` compares (§7.8): `1` matches `1.0` and the text `1`, and text compares case-sensitively. A case after the match is not evaluated, so a `{!…}` in it doesn't run.
+- A lone last group is the default. No match and no default gives success with no output.
+- A missing value, or a missing case value reached before a match, fails with 230 and runs no branch.
+- `switch` with no case is `E_EXPR_SYNTAX`, and so is a case value with no branch after it.
+- Branches are groups, glued or spaced, as in `ifelse`. Preflight checks every branch, and a command in one is refused only if its branch is chosen. For `MAX_INVOCATIONS` a `switch` counts as its largest branch, as an `ifelse` does.
+- `ifelse` and `switch` are listed beside the commands (`/api/v1/commands` with `kind: "form"`, `!help ifelse`), and no custom command may take their names.
 
 ---
 
@@ -763,6 +781,7 @@ With `--run`, it also evaluates the expression with a **discarded** write buffer
 - Stored bodies keep the syntax version they were parsed with. When the major version changes, the implementation MUST either keep a parser for the old version or migrate bodies automatically.
 - **2.0** (ADR-0018) changes how existing input parses: `>`/`>>` became `->`/`-->`, `{N}` became `{_N}`, the bot's fields took a `$`, reads into values use `[ ]`, and placeholders hold expressions. The implementation keeps only the 2.0 parser. Every stored 1.0 body (custom command versions, triggers, callbacks) was rewritten to 2.0 by `scripts/migrate_v2.py`, which checked each rewrite parsed and marked it `"2.0"`. The script and its `lang/migrate.py` were removed once every deployment had run it (2026-10-23); git history has them. Stored rows still carry `syntax_version`, so a future change can find what it has to rewrite. The script also listed what no rewrite could decide: bodies that read a result's `.code` (a missing placeholder is now 230, not 2), and custom commands whose names 2.0 took (`check`, `calc`, `ifelse`, the operator commands, and names made only of digits). The rewrite changed the stored version in place rather than adding a custom command version, because it didn't change what the command does.
 - **2.0, 2026-10-23:** glued `ifelse` branches (§2.3), and words after the else branch are `E_EXPR_SYNTAX` instead of an internal error. Both only make input that used to fail parse, so `syntax_version` stays `"2.0"` and nothing stored changes.
+- **2.0, 2026-10-24** (ADR-0037): more conditions in `ifelse` (§8.2), and the `switch` form (§8.3). Both only make input that used to fail parse valid, so, as with the glued branches above, `syntax_version` stays `"2.0"` and nothing stored changes. A custom command named `switch` could be called before and can't now, so `switch` and `ifelse` are refused as names.
 - Deferred features are tracked in language proposal §6: the `?` suffix, and `;` behavior.
 
 ---
@@ -926,15 +945,25 @@ Primary         <- Group
                  / &Reserved %E_RESERVED_OPERATOR
                  / &OperatorToken %E_UNEXPECTED_OPERATOR
                  / IfElse
+                 / Switch
                  / Invocation
 
-IfElse          <- CmdPrefix? 'ifelse' Boundary IfCond IfThen (WS Branch)?
+IfElse          <- CmdPrefix? 'ifelse' Boundary IfCond IfThen (WS IfMore)* (WS Branch)?
+IfMore          <- !Branch !OperatorToken Word WS Branch    # another condition and its branch
 IfCond          <- WS !OperatorToken Word
                  / _ EOF %E_MISSING_OPERAND
                  / %E_EXPR_SYNTAX                       # hint: ifelse needs a condition, then ( a command )
 IfThen          <- WS Branch
                  / _ EOF %E_MISSING_OPERAND
                  / %E_EXPR_SYNTAX                       # hint: ifelse needs ( a command ) after its condition
+Switch          <- CmdPrefix? 'switch' Boundary SwitchValue Case+ (WS Branch)?
+SwitchValue     <- WS !OperatorToken Word
+                 / _ EOF %E_MISSING_OPERAND
+                 / %E_EXPR_SYNTAX                       # hint: switch needs a value, then its cases
+Case            <- WS !Branch !OperatorToken Word CaseThen
+CaseThen        <- WS Branch
+                 / _ EOF %E_MISSING_OPERAND
+                 / %E_EXPR_SYNTAX                       # hint: switch needs ( a command ) after each case
 Branch          <- Group / TightGroup
 TightGroup      <- '(' !WSChar Expr _ (TightClose / Close)   # §2.3: `(echo a)`
                  / '(' Expr _ EOF %E_UNBALANCED_GROUP
@@ -1197,9 +1226,10 @@ This is a simplified W3C-style EBNF (XML spec notation) for **railroad diagrams*
 Line        ::= Prefix Gap? ( Expr | Expression )
 Expr        ::= Pipeline ( ( '&&' | '||' ) Pipeline )*
 Pipeline    ::= Stage ( '|' Stage )*
-Stage       ::= ( Group | IfElse | Invocation ) ( ( '->' | '-->' ) VarRef )?
+Stage       ::= ( Group | IfElse | Switch | Invocation ) ( ( '->' | '-->' ) VarRef )?
 Group       ::= '(' Expr ')'
-IfElse      ::= Prefix? 'ifelse' Argument Group Group?
+IfElse      ::= Prefix? 'ifelse' Argument Group ( Argument Group )* Group?
+Switch      ::= Prefix? 'switch' Argument ( Argument Group )+ Group?
 Invocation  ::= Prefix? Gap? '@'? Name Argument*
               | Prefix? Gap? ( 'check' | 'calc' ) Expression
 Argument    ::= ( Text | Quoted | Escape | Placeholder )+

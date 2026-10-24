@@ -154,14 +154,30 @@ class Store:
 
 @dataclass(frozen=True, slots=True)
 class IfElse:
-    """`ifelse cond ( then ) [ ( else ) ]`: both branches are checked, only the chosen one runs."""
+    """`ifelse cond ( then ) [ ( else ) ]`: both branches are checked, only the chosen one runs.
+
+    More conditions nest: `ifelse c1 ( t1 ) c2 ( t2 ) ( e )` is `IfElse(c1, t1, Group(IfElse(c2, t2, e)))`.
+    """
 
     cond: Arg
     then: Group
     else_: Group | None
 
 
-type Node = And | Or | Pipe | Group | Store | Invocation | IfElse
+@dataclass(frozen=True, slots=True)
+class Switch:
+    """`switch subject v1 ( b1 ) … [ ( default ) ]`: the first case equal to the subject runs (ADR-0037)."""
+
+    subject: Arg
+    cases: tuple[tuple[Arg, Group], ...]
+    default: Group | None
+
+    @property
+    def branches(self) -> list[Group]:
+        return [group for _, group in self.cases] + ([self.default] if self.default is not None else [])
+
+
+type Node = And | Or | Pipe | Group | Store | Invocation | IfElse | Switch
 
 
 # ── Walking ─────────────────────────────────────────────────────────────────
@@ -236,6 +252,10 @@ def invocations(node: Node) -> list[Invocation]:
         case IfElse(cond, then, else_):
             found = [i for inv in arg_substitutions(cond) for i in _with_substitutions(inv)]
             return found + invocations(then) + (invocations(else_) if else_ is not None else [])
+        case Switch(subject, cases, _):
+            words = [subject, *(value for value, _ in cases)]
+            found = [i for word in words for inv in arg_substitutions(word) for i in _with_substitutions(inv)]
+            return found + [i for branch in node.branches for i in invocations(branch)]
     raise TypeError(f"not an AST node: {node!r}")
 
 
@@ -252,6 +272,8 @@ def stores(node: Node) -> list[Store]:
             return [*stores(inner), node]
         case IfElse(_, then, else_):
             return stores(then) + (stores(else_) if else_ is not None else [])
+        case Switch():
+            return [s for branch in node.branches for s in stores(branch)]
     raise TypeError(f"not an AST node: {node!r}")
 
 
@@ -356,4 +378,10 @@ def to_canonical(node: Node) -> str:
         case IfElse(cond, then, else_):
             branches = to_canonical(then) + (f", {to_canonical(else_)}" if else_ is not None else "")
             return f"IfElse({json.dumps(render_parts(cond), ensure_ascii=False)}, {branches})"
+        case Switch(subject, cases, default):
+            parts = [json.dumps(render_parts(subject), ensure_ascii=False)]
+            parts += [f"{json.dumps(render_parts(v), ensure_ascii=False)}: {to_canonical(g)}" for v, g in cases]
+            if default is not None:
+                parts.append(to_canonical(default))
+            return f"Switch({', '.join(parts)})"
     raise TypeError(f"not an AST node: {node!r}")
