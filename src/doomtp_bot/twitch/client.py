@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from contextvars import ContextVar
@@ -787,6 +788,14 @@ class TwitchService:
             self._users_by_login.move_to_end(login)
             return cached
         return await self._fetch_user(login, logins=[login])
+
+    async def ping_ms(self) -> int:
+        """How long one Helix request takes, start to answer, in milliseconds: `latency`, and so `ping`."""
+        if self.client is None or self.bot_id is None:
+            raise RuntimeError("twitch client is not connected")
+        started = time.monotonic()
+        await self.client.fetch_users(ids=[self.bot_id], token_for=self.bot_id)
+        return round((time.monotonic() - started) * 1000)
 
     async def logins_by_id(self, user_ids: Sequence[str]) -> dict[str, str]:
         """Current logins for up to 100 user ids; ids Twitch doesn't know are left out."""

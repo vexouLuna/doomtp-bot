@@ -55,6 +55,11 @@ class FakeTwitch:
         found = USERS.get(login.lower())
         return {"id": found[0], "name": found[1], "display": found[2]} if found else None
 
+    async def ping_ms(self) -> int:
+        if self.refuse is not None:
+            raise RuntimeError(self.refuse)
+        return 123
+
     async def timeout_user(self, channel_id: str, user_id: str, seconds: int, reason: str) -> bool:
         self.timeouts.append((channel_id, user_id, seconds, reason))
         return True
@@ -257,6 +262,14 @@ async def test_mecho_says_each_quoted_line_as_its_own_message(h: Harness) -> Non
     # It sends the lines itself, so its message stays empty; the run log reads what it sent.
     assert report.result.message is None and report.logged_message == "hi Mod\nsecond line\nthird"
     assert should_log_run(report, LogLevel.OUTPUT)
+
+
+async def test_latency_is_one_round_trip_to_twitch(h: Harness) -> None:
+    report = await h.run("alice", "!latency | echo pong, {_}ms to Twitch")
+    assert report.send == "pong, 123ms to Twitch"
+    h.twitch.refuse = "503"
+    failed = await h.run("mod", "!latency")  # alice's tier is on its cooldown now
+    assert failed.result.code == Code.FAIL and "didn't answer" in (failed.result.message or "")
 
 
 async def test_mecho_takes_at_most_ten_lines(h: Harness) -> None:

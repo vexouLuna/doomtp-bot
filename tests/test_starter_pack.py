@@ -27,6 +27,7 @@ async def test_the_starter_commands_run_in_a_channel_that_never_published_them(h
 
     assert f"create pack {PACK}" in done and f"publish {PACK} globally" in done
     assert await h.say("alice", "!hug bob") == "Alice hugs bob 🫂"
+    assert await h.say("alice", "!ping") == "pong"  # no Twitch here to time, so just pong
     assert await h.say("alice", "!hug") == "Alice hugs the whole chat 🫂"
     assert (await h.say("alice", "!lurk") or "").startswith("thanks for the lurk, Alice")
     rolled = await h.say("alice", "!roll 1-6")
