@@ -176,7 +176,7 @@ ident       = ( letter | "_" ) , { letter | digit | "_" } ;
 | # | Operators | Associativity |
 |---|-----------|---------------|
 | 1 | literals, references, `( … )`, placeholders, `{! … }` | — |
-| 2 | `[ … ]`, `:len` `:keys` `:values` `:template` `:human` `:int` … | left |
+| 2 | `[ … ]`, `:len` `:keys` `:values` `:template` `:human` `:time` … `:int` … | left |
 | 3 | unary `-` | right |
 | 4 | `*` `/` `//` `%` | left |
 | 5 | `+` `-` | left |
@@ -334,7 +334,7 @@ Lit(value: int | float | str | bool)
 Ref(root: str, path: list[str])      # $chatter.name, _, _2.code, arg.1, args, event.user.name
 VarRef(namespace: str, name: str, path: list[Expr])   # channel.stats[kills]; path only in store targets
 Index(target: Expr, key: Expr)       # x[key]
-Access(target: Expr, name: str, choices: list[str])   # :len :keys :values :template :human, or a type such as :int
+Access(target: Expr, name: str, choices: list[str])   # :len :keys :values :template :human, a formatter (choices = its option), or a type such as :int
 Unary(op: "-" | "not", operand: Expr)
 Binary(op: "+" | "-" | "*" | "/" | "//" | "%" | "and" | "or" | "??", left: Expr, right: Expr)
 Compare(first: Expr, rest: list[tuple[op, Expr]])     # a < b <= c
@@ -664,6 +664,7 @@ A reference is **missing** when:
 - **Accessors.** `:len` counts a list, a map or text. `:keys` and `:values` need a map (253 `E_NOT_A_MAP`). A type (`:int`, `:user`, …) converts per §7.4.
 - **`:template`** renders stored text as if it were the text of an argument: `{channel.customecho[uptime]:template ?? live for {$channel.uptime:human}}`. It needs text (232). The text may hold escapes and placeholders, and a `}` outside a placeholder is plain text. It may not hold `{!…}` or another `:template` (201 `E_BAD_PLACEHOLDER`): templates are written by moderators and read by everyone, so a template only reads. A placeholder in it with no value and no `??` of its own makes the whole template missing, so the outer `??` shows instead.
 - **`:human`** says a number of seconds in its two largest units, for people: `{$channel.uptime:human}` is `1h 2m` for 3725, `45s` for 45, `1d 1h` for 90061. It needs a number that isn't negative (232).
+- **Formatters** (ADR-0037), the same as the `format` command (§8.1): `:time` or `:time(pattern)` shows epoch seconds or ISO 8601 text in the channel's timezone, with Moment-style tokens `YYYY YY MMMM MMM MM DD D dddd ddd HH H hh mm ss A`, `[text]` literal, default `YYYY-MM-DD HH:mm`; the pattern runs to the next `)`. `:ago` says `3h 2m ago` (or `in 3h 2m`). `:number` or `:number(2)` separates thousands with commas, `:percent(1)` shows `0.4567` as `45.7%`, `:ordinal` shows `22nd`. A value they can't read is 232. A duration's formatter is `:human`: `:duration` stays the cast that reads `1h30m` as seconds.
 - **Budget.** One run evaluates at most `MAX_EXPR_OPS (1000)` operators, accessors and index steps across all its expressions. The one that passes the limit fails with 235 (`E_EXPR_BUDGET`).
 - **No `eval`.** Expressions are evaluated by the language's own evaluator over the AST; nothing is handed to a host language.
 
@@ -701,6 +702,7 @@ These are also in `core`, with the same rules as the sentinels.
 |---------|-----------|--------|
 | `check` | one expression (§3.1), written without braces | `code 0` if it holds (§7.8), `1` if it doesn't, 230 (`E_MISSING_VALUE`) if it is missing; `message = null`, `data` = the value |
 | `calc` | one expression | `code 0`, `message` = the value rendered (§7.6), `data` = the value. The target of a bare expression line (§3.5) |
+| `format` | `time\|ago\|duration\|number\|percent\|ordinal`, a value, then a pattern (`time`) or decimals (`number`, `percent`) | `code 0`, `message = data` = the text, as the formatters above give it; `duration` spells out every unit (`1d 1h 1m 1s`). A value it can't read is 232 (`E_TYPE`). |
 | `add` `sub` `mul` `div` `idiv` `mod` | `left right` | `left + - * / // % right`, said |
 | `eq` `ne` `lt` `le` `gt` `ge` `in` | `left right` | `left == != < <= > >= in right`, said as `true`/`false` |
 | `neg`, `not` | `value` | `-value`, `not value` |

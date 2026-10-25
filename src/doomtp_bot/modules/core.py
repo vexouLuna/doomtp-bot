@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from doomtp_bot.runtime import ops
+from doomtp_bot.runtime import formats, ops
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command
 from doomtp_bot.runtime.result import Code, CommandError, Result
@@ -191,10 +191,41 @@ async def result_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> R
     return Result.success(message, {**fields, "message": message})
 
 
+@command(
+    _spec(
+        name="format",
+        data_schema={"": "str: the formatted text"},
+        summary="Format a number or a time",
+        description=(
+            "time takes epoch seconds or ISO 8601 text, shown in the channel's timezone with a pattern of "
+            "YYYY YY MMMM MMM MM DD D dddd ddd HH H hh mm ss A ([text] is literal; default YYYY-MM-DD HH:mm). "
+            "ago says how long ago; duration spells out seconds in every unit; number and percent take "
+            "decimals. The same formatters work inside a placeholder: {x:time(DD MMM)}, {x:ago}, {x:number(2)}, "
+            "{x:percent(1)}, {x:ordinal}, and {x:human} for two units of a duration."
+        ),
+        params=(
+            Param("1", "kind", required=True, type="choice", choices=formats.KINDS),
+            Param("2", "value", required=True, type="any"),
+            Param("3+", "option", description="time: a pattern; number and percent: decimals"),
+        ),
+        examples=(
+            Example("{sign}format time {$now.unix} DD MMM HH:mm", "23 Oct 21:30"),
+            Example("{sign}format duration 90061", "1d 1h 1m 1s"),
+            Example("{sign}format number 1234567.891 2", "1,234,567.89"),
+            Example("{sign}format ordinal 22", "22nd"),
+        ),
+    )
+)
+async def format_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result:
+    text = formats.apply(args["kind"], args["value"], args.get("option"), ctx.channel.timezone, ctx.exec.now())
+    return Result.success(text, text)
+
+
 COMMANDS: tuple[Command, ...] = (
     true_cmd,
     fail_cmd,
     result_cmd,
+    format_cmd,
     echo_cmd,
     check_cmd,
     calc_cmd,

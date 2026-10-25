@@ -71,7 +71,9 @@ REGISTERED_ROOTS = frozenset(
 PATH_ROOTS = frozenset({"event", "match", "cooldown", "denied", "run", "cmd"})
 RESULT_FIELDS = ("code", "message", "data")
 # Accessors and casts after `:` (spec §2.7). `choice(a,b)` is handled separately.
-ACCESSORS = ("len", "keys", "values", "template", "human")
+ACCESSORS = ("len", "keys", "values", "template", "human", "time", "ago", "number", "percent", "ordinal")
+# Formatters that take an option in ( ): a pattern, which runs to the `)`, or a number of decimals (ADR-0037).
+OPTION_ACCESSORS = ("time", "number", "percent")
 TYPE_NAMES = ("str", "int", "float", "bool", "range", "duration", "user", "url", "list", "map")
 # Commands whose arguments are one expression (ADR-0018 item 6).
 EXPR_COMMANDS = frozenset({"check", "calc"})
@@ -1119,6 +1121,13 @@ class _Parser:
         while self.pos < self.n and _is_ident_char(self.s[self.pos]):
             self.pos += 1
         name = self.s[start : self.pos]
+        if name in OPTION_ACCESSORS and self.s.startswith("(", self.pos):
+            end = self.s.find(")", self.pos)
+            if end < 0 or "}" in self.s[self.pos : end]:
+                raise self._error(ParseErrorCode.BAD_PLACEHOLDER, at, hint=f"{name}(…) ends with )")
+            option = self.s[self.pos + 1 : end]
+            self.pos = end + 1
+            return Access(target, name, (option,))
         if name in ACCESSORS or name in TYPE_NAMES:
             return Access(target, name)
         raise self._error(ParseErrorCode.UNKNOWN_OP, at, op=":" + name)

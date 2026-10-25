@@ -45,7 +45,7 @@ from doomtp_bot.lang.ast import (
 )
 from doomtp_bot.lang.errors import ParseError
 from doomtp_bot.lang.parser import Context, parse_template
-from doomtp_bot.runtime import ops
+from doomtp_bot.runtime import formats, ops
 from doomtp_bot.runtime.context import Args, CommandContext, ExecContext, Publisher, RunCancelled
 from doomtp_bot.runtime.ops import ExprError
 from doomtp_bot.runtime.result import (
@@ -538,6 +538,8 @@ class Executor:
                     return await self.template(value, ctx, scope, prev)
                 if name == "human":
                     return ops.human(value)
+                if name in formats.KINDS:
+                    return formats.apply(name, value, choices[0] if choices else None, ctx.channel.timezone, ctx.now())
                 try:
                     return await convert(value, name, choices=choices, resolve_user=ctx.resolve_user)
                 except ConversionError:

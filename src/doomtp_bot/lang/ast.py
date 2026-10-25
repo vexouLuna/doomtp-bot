@@ -43,7 +43,8 @@ class Index:
 
 @dataclass(frozen=True, slots=True)
 class Access:
-    """`:len`, `:keys`, `:values`, or a cast such as `:int` or `:choice(a,b)`."""
+    """`:len`, `:keys`, `:values`, a formatter such as `:time(DD MMM)`, or a cast such as `:int` or
+    `:choice(a,b)`. `choices` holds a formatter's option, when it has one."""
 
     target: Expr
     name: str
@@ -343,7 +344,7 @@ def render_expr(expr: Expr, top: bool = True) -> str:
         case Index(target, key):
             return inner(target) + _render_key(key)
         case Access(target, name, choices):
-            return f"{inner(target)}:{name}" + (f"({','.join(choices)})" if name == "choice" else "")
+            return f"{inner(target)}:{name}" + (f"({','.join(choices)})" if choices else "")
         case Unary(op, operand):
             return wrap(f"-{inner(operand)}" if op == "-" else f"not {inner(operand)}")
         case Binary(op, left, right):
