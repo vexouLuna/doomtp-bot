@@ -93,6 +93,11 @@ async def test_language_describes_the_syntax_for_the_editor(client: httpx.AsyncC
         "values",
         "template",
         "human",
+        "time",
+        "ago",
+        "number",
+        "percent",
+        "ordinal",
     ]
     assert "channel.chatter" in body["variable_namespaces"]
     assert body["roots_by_context"]["body"].count("arg") == 1
