@@ -42,7 +42,7 @@ from doomtp_bot.channels.manager import ChannelBanned
 from doomtp_bot.customcmds.packs import custom_modules
 from doomtp_bot.customcmds.params import to_params
 from doomtp_bot.customcmds.resolution import MODULE as CUSTOM_MODULE
-from doomtp_bot.customcmds.resolution import is_custom, published_specs, system_specs
+from doomtp_bot.customcmds.resolution import is_custom, published_specs, returns, system_specs
 from doomtp_bot.customcmds.service import CustomCommandService
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK, GLOBAL
 from doomtp_bot.policy.service import PolicyService
@@ -583,6 +583,7 @@ def _custom_json(command: Any) -> dict[str, Any]:
             }
             for p in to_params(command.params)
         ],
+        "data": returns(command.body),  # what {_N} holds afterwards, read from the body's `result` stages
     }
 
 
