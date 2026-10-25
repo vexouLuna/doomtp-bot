@@ -29,8 +29,10 @@ FLUSH_INTERVAL_S = 0.5
 FLUSH_BATCH = 200
 QUEUE_MAX = 10_000
 
-Op = tuple[str, tuple[Any, ...]]
+Op = tuple[str, tuple[Any, ...] | dict[str, Any]]
 _MESSAGE_SOURCE = 7  # where `source` sits in a "message" op's parameters
+_ACTIONS = ("user_clear", "timeout", "ban")  # what a timeout or ban is stored as, live or backfilled
+ACTION_WINDOW_MS = 2000  # how far apart two sightings of one action can be (chatlog 0010)
 
 
 def _raw(event: dict[str, Any] | None, line: str | None, rebuilt: Callable[[], dict[str, Any]]) -> tuple[str, str]:
@@ -138,6 +140,13 @@ class ChatLogWriter:
         raw = _raw(raw_event, raw_line, lambda: legacy.mod_event(
             channel_id, message_id=message_id, target=target, moderator=moderator, duration_s=duration_s,
             reason=reason))  # fmt: skip
+        if kind in _ACTIONS and target is not None:
+            # The same action live and by backfill: one row, whichever came first (chatlog 0010).
+            await self._put("mod_action", {
+                "channel": channel_id, "type": kind, "target": target, "moderator": moderator,
+                "source": source, "raw": raw[0], "raw_format": raw[1], "at": at, "duration": duration_s,
+            })  # fmt: skip
+            return
         await self._put(
             "mod_event",
             (channel_id, kind, message_id, target, moderator, source, *raw, at),
@@ -240,7 +249,7 @@ class ChatLogWriter:
             await self.end_session(channel_id, reason, at)
 
     # ── internals ───────────────────────────────────────────────────────────
-    async def _put(self, kind: str, params: tuple[Any, ...]) -> None:
+    async def _put(self, kind: str, params: tuple[Any, ...] | dict[str, Any]) -> None:
         if self._queue.full():
             log.warning("chatlog.queue_full", depth=self._queue.qsize())  # blocks the producer rather than dropping
         await self._queue.put((kind, params))
@@ -309,7 +318,7 @@ class ChatLogWriter:
         """Run one op. For a message Postgres actually inserted, its source; a re-offered one isn't new."""
         kind, params = op
         cursor = await self.conn.execute(_SQL[kind], params)
-        if kind == "message" and cursor.rowcount == 1:
+        if kind == "message" and cursor.rowcount == 1 and isinstance(params, tuple):
             return str(params[_MESSAGE_SOURCE])
         return None
 
@@ -339,6 +348,29 @@ _SQL: dict[str, str] = {
     "mod_event": (
         "INSERT INTO mod_events (channel_id, type, message_id, target_user_id, moderator_user_id, source, raw,"
         " raw_format, at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        # Backfill and EventSub redeliveries offer the same event again; the first one wins.
+        " ON CONFLICT DO NOTHING"
+    ),
+    # A timeout or ban within ACTION_WINDOW_MS of a stored one for the same target, whose type and duration
+    # can be the same action, is that action seen again (live and by backfill keep different clocks): the
+    # stored row takes what the new one adds, and nothing is inserted.
+    "mod_action": (
+        "WITH same AS ("
+        " SELECT id FROM mod_events WHERE channel_id = %(channel)s AND target_user_id = %(target)s"
+        "  AND type IN ('user_clear', 'timeout', 'ban') AND (type = %(type)s OR 'user_clear' IN (type, %(type)s))"
+        f"  AND abs(at - %(at)s) <= {ACTION_WINDOW_MS}"
+        "  AND (duration_s IS NULL OR %(duration)s::int IS NULL OR duration_s = %(duration)s::int)"
+        " ORDER BY at, id LIMIT 1"
+        "), merged AS ("
+        " UPDATE mod_events m SET type = CASE WHEN m.type = 'user_clear' THEN %(type)s ELSE m.type END,"
+        "  moderator_user_id = COALESCE(m.moderator_user_id, %(moderator)s),"
+        "  duration_s = COALESCE(m.duration_s, %(duration)s::int)"
+        " FROM same WHERE m.id = same.id RETURNING m.id"
+        ")"
+        " INSERT INTO mod_events (channel_id, type, target_user_id, moderator_user_id, source, raw, raw_format, at,"
+        " duration_s) SELECT %(channel)s, %(type)s, %(target)s, %(moderator)s, %(source)s, %(raw)s, %(raw_format)s,"
+        " %(at)s, %(duration)s::int WHERE NOT EXISTS (SELECT 1 FROM merged)"
+        " ON CONFLICT DO NOTHING"
     ),
     "flag_deleted": "UPDATE messages SET deleted_at = COALESCE(deleted_at, %s) WHERE message_id = %s",
     "flag_user_cleared": (

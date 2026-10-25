@@ -292,3 +292,47 @@ cases:
     context: body
     input: 'ifelse {true} echo a'
     error: E_EXPR_SYNTAX
+
+  - id: V2.29-ifelse-glued-branches
+    context: body
+    input: 'ifelse {true} (echo balls) (echo balls2)'
+    ast: 'IfElse("{true}", Group(echo["balls"]), Group(echo["balls2"]))'
+
+  - id: V2.30-ifelse-glued-and-spaced-mix
+    context: body
+    input: 'ifelse {true} (echo a ) ( echo b)'
+    error: E_UNBALANCED_GROUP
+
+  - id: V2.31-ifelse-glued-keeps-inner-parens
+    context: body
+    input: 'ifelse {true} (echo (lol)) (true)'
+    ast: 'IfElse("{true}", Group(echo["(lol)"]), Group(true[]))'
+
+  - id: V2.32-ifelse-glued-nested
+    context: body
+    input: 'ifelse {true} (ifelse {false} (echo x) (echo y)) (echo z)'
+    ast: 'IfElse("{true}", Group(IfElse("{false}", Group(echo["x"]), Group(echo["y"]))), Group(echo["z"]))'
+
+  - id: V2.33-ifelse-glued-store
+    context: body
+    input: 'ifelse {true} (echo a -> channel.x)'
+    ast: 'IfElse("{true}", Group(Store(echo["a"], channel.x)))'
+
+  - id: V2.34-ifelse-glued-quoted-paren
+    context: body
+    input: 'ifelse {true} (echo "x)")'
+    ast: 'IfElse("{true}", Group(echo["x)"]))'
+
+  - id: V2.35-ifelse-glued-third-branch
+    context: body
+    input: 'ifelse {true} (echo a) (echo b) (echo c)'
+    error: E_EXPR_SYNTAX
+
+  - id: V2.36-ifelse-words-after-the-branches
+    context: body
+    input: 'ifelse {true} ( echo a ) lol'
+    error: E_EXPR_SYNTAX
+
+  - id: V2.37-plain-parens-stay-text
+    input: '!echo (lol) (echo a)'
+    ast: 'echo["(lol)","(echo","a)"]'

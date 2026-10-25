@@ -73,6 +73,8 @@ A chunk is an **operator token** only if it consists solely of one of the follow
 
 Every other chunk is a **word**. So `a|b`, `a->b`, `>`, `>>`, `>:(`, `;)`, `(lol)`, `&` and `|||` are all ordinary words.
 
+**One exception: `ifelse` branches.** Where a branch must follow (§8.2), a `(` glued to the next character still opens it, and the `)` glued to its last word closes it: `ifelse {x} (echo a) (echo b)` is the same as `ifelse {x} ( echo a ) ( echo b )`. Inside a glued branch, a run of `)` that ends a chunk closes as many glued branches as are open, so `(echo (lol))` says `(lol)` and `(ifelse {y} (echo a))` closes both. Anywhere else `(lol)` stays a word, and inside a spaced `( … )` the rules above apply unchanged.
+
 > **Changed in 2.0:** the store operators were `>` and `>>`, which are now plain words. For one release, a typed Line where a `>` or `>>` chunk is followed by a variable (`> channel.x`) fails with `E_UNEXPECTED_OPERATOR` and the hint `> is plain text now: store with ->`. Stored bodies were rewritten when they moved to 2.0 (§11).
 
 ### 2.4 Quoted strings
@@ -704,7 +706,8 @@ The operator commands read each argument like a literal: a number, `true`/`false
 `ifelse condition ( then … ) [ ( else … ) ]` is a special form in the grammar (§3.1), not a command: it has no permission, cooldown or index of its own. The condition is one argument, usually a placeholder: `!ifelse {channel.deaths > 10} ( echo rough day ) ( echo going well )`. Evaluation is in §6.3.
 
 - A missing condition fails with 230 and runs neither branch, like `check`. Choose a default with `??`: `{channel.deaths ?? 0}`.
-- The branches are groups and hold whole expressions, including stores and nested `ifelse`.
+- The branches are groups and hold whole expressions, including stores and nested `ifelse`. The parentheses may be glued to the words inside: `(echo a)` works like `( echo a )` (§2.3).
+- Anything after the else branch is `E_EXPR_SYNTAX`, hint `ifelse ends after its ( else ) branch`.
 - Without an else branch, a false condition gives success with no output.
 - A command in a branch is refused only if its branch is chosen (§6.3), which is what lets the condition guard a command not everyone may run.
 
@@ -759,6 +762,7 @@ With `--run`, it also evaluates the expression with a **discarded** write buffer
 - Document 1.2 gave every named runtime error its own code (§6.2, ADR-0018) where they were all code 2, and made `>>` fail on a full list instead of dropping the oldest item. Again the grammar and every parse are unchanged, so `syntax_version` stays `"1.0"`. A stored body that tests for code 2 after one of these errors now sees the new code.
 - Stored bodies keep the syntax version they were parsed with. When the major version changes, the implementation MUST either keep a parser for the old version or migrate bodies automatically.
 - **2.0** (ADR-0018) changes how existing input parses: `>`/`>>` became `->`/`-->`, `{N}` became `{_N}`, the bot's fields took a `$`, reads into values use `[ ]`, and placeholders hold expressions. The implementation keeps only the 2.0 parser. Every stored 1.0 body (custom command versions, triggers, callbacks) was rewritten to 2.0 by `scripts/migrate_v2.py`, which checked each rewrite parsed and marked it `"2.0"`. The script and its `lang/migrate.py` were removed once every deployment had run it (2026-10-23); git history has them. Stored rows still carry `syntax_version`, so a future change can find what it has to rewrite. The script also listed what no rewrite could decide: bodies that read a result's `.code` (a missing placeholder is now 230, not 2), and custom commands whose names 2.0 took (`check`, `calc`, `ifelse`, the operator commands, and names made only of digits). The rewrite changed the stored version in place rather than adding a custom command version, because it didn't change what the command does.
+- **2.0, 2026-10-23:** glued `ifelse` branches (§2.3), and words after the else branch are `E_EXPR_SYNTAX` instead of an internal error. Both only make input that used to fail parse, so `syntax_version` stays `"2.0"` and nothing stored changes.
 - Deferred features are tracked in language proposal §6: the `?` suffix, and `;` behavior.
 
 ---
@@ -924,13 +928,17 @@ Primary         <- Group
                  / IfElse
                  / Invocation
 
-IfElse          <- CmdPrefix? 'ifelse' Boundary IfCond IfThen (WS Group)?
+IfElse          <- CmdPrefix? 'ifelse' Boundary IfCond IfThen (WS Branch)?
 IfCond          <- WS !OperatorToken Word
                  / _ EOF %E_MISSING_OPERAND
                  / %E_EXPR_SYNTAX                       # hint: ifelse needs a condition, then ( a command )
-IfThen          <- WS Group
+IfThen          <- WS Branch
                  / _ EOF %E_MISSING_OPERAND
                  / %E_EXPR_SYNTAX                       # hint: ifelse needs ( a command ) after its condition
+Branch          <- Group / TightGroup
+TightGroup      <- '(' !WSChar Expr _ (TightClose / Close)   # §2.3: `(echo a)`
+                 / '(' Expr _ EOF %E_UNBALANCED_GROUP
+TightClose      <- ')' &{ the run of ')' here ends at WS/EOF and is no longer than the glued branches open }
 
 Group           <- Open GroupInner GroupEnd
 GroupInner      <- WS Expr

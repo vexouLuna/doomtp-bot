@@ -126,6 +126,18 @@ async def test_a_broadcaster_manages_their_own_channel(client: httpx.AsyncClient
     assert (await client.get("/api/v1/session")).json()["channels"] == [OWN_LOGIN]
 
 
+async def test_a_broadcaster_renamed_on_twitch_finds_their_channel_by_the_new_name(
+    client: httpx.AsyncClient, signin: dict[str, Any]
+) -> None:
+    USERS["renamed"] = (OWN_ID, "modchannel_new")
+    try:
+        await sign_in(client, "renamed")
+    finally:
+        del USERS["renamed"]
+    assert (await client.get("/api/v1/session")).json()["channels"] == ["modchannel_new"]
+    assert (await client.get("/api/v1/channels/modchannel_new")).status_code == 200
+
+
 async def test_a_bot_owner_is_an_admin_without_asking_helix(client: httpx.AsyncClient, signin: dict[str, Any]) -> None:
     assert (await sign_in(client, "owner")).headers["location"] == "/admin"
     session = (await client.get("/api/v1/session")).json()
