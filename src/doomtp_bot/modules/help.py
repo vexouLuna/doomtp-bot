@@ -19,6 +19,7 @@ from doomtp_bot.lang.parser import strip_prefix
 from doomtp_bot.modules.services import service, services
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.runtime.context import Args, CommandContext
+from doomtp_bot.runtime.forms import BY_NAME
 from doomtp_bot.runtime.registry import Command, CommandRegistry, command
 from doomtp_bot.runtime.result import Code, Result
 from doomtp_bot.runtime.spec import CommandSpec, Cooldown, Example, Param, with_sign
@@ -110,6 +111,7 @@ def _one_message(text: str) -> str:
         examples=(
             Example("{sign}help", "docs at https://…/"),
             Example("{sign}help random", "{sign}random [range]: …"),
+            Example("{sign}help ifelse", "ifelse <condition> ( then ) …: Run the branch of …"),
         ),
         default_cooldowns={"everyone": Cooldown(tier_s=5, user_s=15)},
     )
@@ -121,6 +123,10 @@ async def help_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
     if not name:
         return await _listing(ctx, site_root(ctx), "docs at")
     wanted = strip_prefix(name, prefix).lower().removeprefix("@")
+    form = BY_NAME.get(wanted)
+    if form is not None:  # grammar, not a command: no policy to check (ADR-0037)
+        text = f"{form.syntax}: {with_sign(form.spec.summary, prefix)}"
+        return Result.success(text, {"name": form.spec.name, "usage": form.syntax, "summary": form.spec.summary})
     # The runtime's own resolver: the built-ins and the system packs' sentinels (ADR-0019).
     found = service(ctx, "runtime").resolver.resolve_name(ctx.exec, wanted)
     spec = found.spec if found is not None else (await _custom_specs(ctx)).get(wanted)

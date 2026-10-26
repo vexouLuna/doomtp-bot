@@ -648,7 +648,7 @@ A **race window** remains: a mod can act after the message has already been sent
 | `GET /healthz`, `GET /readyz` | Now | Liveness, and readiness with component detail: EventSub, tokens, both databases, log queue depth, backfill status, channels |
 | `GET /metrics` | Now | The §13 counters in Prometheus text (ADR-0015). Unauthenticated like the two above, and it names no channel or user. |
 | `/auth/*` | Now | Bot OAuth setup and broadcaster full-tier connect |
-| `GET /api/v1/commands` | **Now** | **All** commands with their full specs. Feeds the public docs page. |
+| `GET /api/v1/commands` | **Now** | **All** commands with their full specs, then the language's forms (`ifelse`, `switch`, the operators) with `kind: "form"` and their syntax as `usage` (ADR-0037, `runtime/forms.py`). Feeds the public docs page. |
 | `GET /api/v1/channels/{login}/commands` | **Now** | The effective command list for a channel, including enabled state, roles, cooldowns and publications |
 | `POST /api/v1/parse` | **Now** | Tokens, AST, errors and warnings from the authoritative parser (ADR-0011). Powers editor diagnostics. |
 | `POST /api/v1/explain` | **Now** | Same output as `!explain`. Public, as the editor's preview. The optional `as_user` (with the `badges` to assume) needs an API key or an admin session (§4.4). |

@@ -279,6 +279,8 @@ async def mecho_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Re
     for line in lines:
         ctx.ensure_not_cancelled()
         await outbox.send(ctx.channel.id, line, is_invalidated=ctx.exec.is_cancelled, run_ref=ctx.exec.run_id)
+        ctx.exec.sent.append(line)
+    # No message: the runtime would send it again. The run log shows `sent` instead.
     return Result.success(None, lines)
 
 

@@ -43,7 +43,8 @@ class Index:
 
 @dataclass(frozen=True, slots=True)
 class Access:
-    """`:len`, `:keys`, `:values`, or a cast such as `:int` or `:choice(a,b)`."""
+    """`:len`, `:keys`, `:values`, a formatter such as `:time(DD MMM)`, or a cast such as `:int` or
+    `:choice(a,b)`. `choices` holds a formatter's option, when it has one."""
 
     target: Expr
     name: str
@@ -154,14 +155,30 @@ class Store:
 
 @dataclass(frozen=True, slots=True)
 class IfElse:
-    """`ifelse cond ( then ) [ ( else ) ]`: both branches are checked, only the chosen one runs."""
+    """`ifelse cond ( then ) [ ( else ) ]`: both branches are checked, only the chosen one runs.
+
+    More conditions nest: `ifelse c1 ( t1 ) c2 ( t2 ) ( e )` is `IfElse(c1, t1, Group(IfElse(c2, t2, e)))`.
+    """
 
     cond: Arg
     then: Group
     else_: Group | None
 
 
-type Node = And | Or | Pipe | Group | Store | Invocation | IfElse
+@dataclass(frozen=True, slots=True)
+class Switch:
+    """`switch subject v1 ( b1 ) … [ ( default ) ]`: the first case equal to the subject runs (ADR-0037)."""
+
+    subject: Arg
+    cases: tuple[tuple[Arg, Group], ...]
+    default: Group | None
+
+    @property
+    def branches(self) -> list[Group]:
+        return [group for _, group in self.cases] + ([self.default] if self.default is not None else [])
+
+
+type Node = And | Or | Pipe | Group | Store | Invocation | IfElse | Switch
 
 
 # ── Walking ─────────────────────────────────────────────────────────────────
@@ -236,6 +253,31 @@ def invocations(node: Node) -> list[Invocation]:
         case IfElse(cond, then, else_):
             found = [i for inv in arg_substitutions(cond) for i in _with_substitutions(inv)]
             return found + invocations(then) + (invocations(else_) if else_ is not None else [])
+        case Switch(subject, cases, _):
+            words = [subject, *(value for value, _ in cases)]
+            found = [i for word in words for inv in arg_substitutions(word) for i in _with_substitutions(inv)]
+            return found + [i for branch in node.branches for i in invocations(branch)]
+    raise TypeError(f"not an AST node: {node!r}")
+
+
+def endings(node: Node) -> list[Invocation | None]:
+    """The invocations whose result can be the expression's when it succeeds: the right side of `|` and
+    `&&`, both sides of `||`, every branch of `ifelse` and `switch`. None is a missing else or default,
+    which returns nothing (ADR-0037 G9)."""
+    match node:
+        case Invocation():
+            return [node]
+        case And(_, right) | Pipe(_, right):
+            return endings(right)
+        case Or(left, right):
+            return endings(left) + endings(right)
+        case Group(inner) | Store(inner, _, _):
+            return endings(inner)
+        case IfElse(_, then, else_):
+            return endings(then) + (endings(else_) if else_ is not None else [None])
+        case Switch(_, cases, default):
+            found = [e for _, branch in cases for e in endings(branch)]
+            return found + (endings(default) if default is not None else [None])
     raise TypeError(f"not an AST node: {node!r}")
 
 
@@ -252,6 +294,8 @@ def stores(node: Node) -> list[Store]:
             return [*stores(inner), node]
         case IfElse(_, then, else_):
             return stores(then) + (stores(else_) if else_ is not None else [])
+        case Switch():
+            return [s for branch in node.branches for s in stores(branch)]
     raise TypeError(f"not an AST node: {node!r}")
 
 
@@ -300,7 +344,7 @@ def render_expr(expr: Expr, top: bool = True) -> str:
         case Index(target, key):
             return inner(target) + _render_key(key)
         case Access(target, name, choices):
-            return f"{inner(target)}:{name}" + (f"({','.join(choices)})" if name == "choice" else "")
+            return f"{inner(target)}:{name}" + (f"({','.join(choices)})" if choices else "")
         case Unary(op, operand):
             return wrap(f"-{inner(operand)}" if op == "-" else f"not {inner(operand)}")
         case Binary(op, left, right):
@@ -356,4 +400,10 @@ def to_canonical(node: Node) -> str:
         case IfElse(cond, then, else_):
             branches = to_canonical(then) + (f", {to_canonical(else_)}" if else_ is not None else "")
             return f"IfElse({json.dumps(render_parts(cond), ensure_ascii=False)}, {branches})"
+        case Switch(subject, cases, default):
+            parts = [json.dumps(render_parts(subject), ensure_ascii=False)]
+            parts += [f"{json.dumps(render_parts(v), ensure_ascii=False)}: {to_canonical(g)}" for v, g in cases]
+            if default is not None:
+                parts.append(to_canonical(default))
+            return f"Switch({', '.join(parts)})"
     raise TypeError(f"not an AST node: {node!r}")

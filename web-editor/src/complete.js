@@ -41,7 +41,10 @@ export function completions(options) {
       const { commands } = await api.commands();
       return {
         from: spot.from,
-        options: commands.map((c) => option(c.name, "function", c.summary)),
+        // Forms come listed too (ADR-0037); only the word ones (ifelse, switch) are typed where a command goes.
+        options: commands
+          .filter((c) => c.kind !== "form" || /^[a-z]+$/.test(c.name))
+          .map((c) => option(c.name, c.kind === "form" ? "keyword" : "function", c.summary)),
       };
     }
     const language = await api.language();

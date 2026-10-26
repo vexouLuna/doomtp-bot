@@ -58,6 +58,12 @@ class RunReport:
     cancelled: bool = False
     duration_ms: int = 0
     ast: Node | None = None
+    sent: list[str] = field(default_factory=list)  # what commands sent themselves, not through `send`
+
+    @property
+    def logged_message(self) -> str | None:
+        """The run log's message: the result's, or else the lines a command such as `mecho` sent."""
+        return self.result.message if self.result.message is not None or not self.sent else "\n".join(self.sent)
 
 
 def should_log_run(report: RunReport, level: LogLevel) -> bool:
@@ -72,7 +78,7 @@ def should_log_run(report: RunReport, level: LogLevel) -> bool:
     if level is LogLevel.ERRORS:
         return code != Code.OK
     if level is LogLevel.OUTPUT:
-        return code != Code.OK or bool(report.send) or bool(report.committed)
+        return code != Code.OK or bool(report.send) or bool(report.sent) or bool(report.committed)
     return True
 
 
@@ -281,6 +287,7 @@ class Runtime:
     @staticmethod
     def _finish(report: RunReport, started: float, ctx: ExecContext) -> RunReport:
         report.duration_ms = int((time.monotonic() - started) * 1000)
+        report.sent = list(ctx.sent)
         if not ctx.dry_run:  # !explain --run is a look, not a run
             metrics.RUNS.inc(code=report.result.code)
         return report

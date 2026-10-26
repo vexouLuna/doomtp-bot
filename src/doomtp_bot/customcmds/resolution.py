@@ -11,15 +11,17 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import structlog
 
 from doomtp_bot.customcmds.packs import Pack, PackService
 from doomtp_bot.customcmds.params import to_params
-from doomtp_bot.customcmds.service import CustomCommand, CustomCommandService, Publication
-from doomtp_bot.lang.ast import Invocation, Node, invocations
+from doomtp_bot.customcmds.service import CustomCommand, CustomCommandError, CustomCommandService, Publication
+from doomtp_bot.lang.ast import Invocation, Node, Placeholder, Text, endings, invocations
 from doomtp_bot.lang.errors import ParseError
+from doomtp_bot.lang.parser import DEFAULT_PREFIX
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.runtime.preflight import MAX_CC_DEPTH
 from doomtp_bot.runtime.resolver import CustomTarget, Resolved, Resolver, Source
@@ -32,6 +34,45 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 MODULE = "custom"
+
+
+def _result_fields(ending: Invocation | None) -> dict[str, str] | None:
+    """The fields a `result` ending returns, by key, with "any" for a value that is one placeholder."""
+    if ending is None or ending.name != "result" or ending.personal:
+        return None
+    fields: dict[str, str] = {}
+    for arg in ending.args:
+        first = arg[0] if arg else None
+        if not isinstance(first, Text):
+            continue
+        if len(arg) == 1 and first.value == "--":
+            break
+        key, eq, _ = first.value.partition("=")
+        if eq and key.isidentifier():
+            lone = len(arg) == 2 and first.value == f"{key}=" and isinstance(arg[1], Placeholder)
+            fields[key] = "any" if lone else "str"
+    fields["message"] = "str?"
+    return fields
+
+
+@lru_cache(maxsize=1024)
+def returns(body: str) -> dict[str, str]:
+    """A custom command's `data_schema`, read from its body (ADR-0037 G9): the union of the fields its
+    `result` endings return, `key?` for one that not every ending returns. Empty with no `result` ending."""
+    try:
+        found = [_result_fields(e) for e in endings(CustomCommandService.parse_body(body, DEFAULT_PREFIX))]
+    except (ParseError, CustomCommandError):
+        return {}
+    results = [f for f in found if f is not None]
+    if not results:
+        return {}
+    types: dict[str, str] = {}
+    for fields in results:
+        for key, kind in fields.items():
+            types[key] = kind if types.get(key, kind) == kind else "any"
+    every = len(results) == len(found)
+    shown = [f"{k}{'' if every and all(k in f for f in results) else '?'}: {t}" for k, t in types.items()]
+    return {"": "{" + ", ".join(shown) + "}"}
 
 
 def spec_for(
@@ -57,6 +98,7 @@ def spec_for(
             description=command.body,
             params=params,
             input=InputMode.OPTIONAL,
+            data_schema=returns(command.body),
             log_level=LogLevel.OFF,
             policy_key=command.id,
             toggleable=False,
@@ -70,6 +112,7 @@ def spec_for(
         description=command.body,
         params=params,
         input=InputMode.OPTIONAL,
+        data_schema=returns(command.body),
         required_role=floor or (publication.required_role if publication else None) or "everyone",
         min_role=floor,
         log_level=LogLevel.INVOCATIONS,

@@ -542,6 +542,10 @@ class Bot:
             if await twitch.start() and twitch.bot_id and twitch.bot_login:
                 self.retry_in = 0.0
                 await self.channels.ensure_home(twitch.bot_id, twitch.bot_login)
+                try:
+                    await self.channels.sync_logins(twitch.logins_by_id)  # renames while the bot was down
+                except Exception:  # a stale login only misnames a page; never block the start on it
+                    log.exception("channel.sync_logins_failed")
                 self.bot_badges.load(await latest_badges(self.dbs.chatlog, twitch.bot_id))  # VIP status (ADR-0019)
                 await self.channels.subscribe_all()
                 await self.probe.probe_all()  # tier per channel, before anything checks a capability

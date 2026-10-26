@@ -17,11 +17,11 @@ from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.runtime.context import Args, ChannelInfo, CommandContext
-from doomtp_bot.runtime.engine import RunReport, Runtime
+from doomtp_bot.runtime.engine import RunReport, Runtime, should_log_run
 from doomtp_bot.runtime.explain import explain
 from doomtp_bot.runtime.registry import command
 from doomtp_bot.runtime.result import Code, Result
-from doomtp_bot.runtime.spec import CommandSpec, Param
+from doomtp_bot.runtime.spec import CommandSpec, LogLevel, Param
 from doomtp_bot.runtime.variables import ANY, InMemoryVariableStore, WriteOp, key_for
 from doomtp_bot.storage.db import Databases
 from tests.fakes import policy_with_channels
@@ -54,6 +54,11 @@ class FakeTwitch:
             self.during_lookup()
         found = USERS.get(login.lower())
         return {"id": found[0], "name": found[1], "display": found[2]} if found else None
+
+    async def ping_ms(self) -> int:
+        if self.refuse is not None:
+            raise RuntimeError(self.refuse)
+        return 123
 
     async def timeout_user(self, channel_id: str, user_id: str, seconds: int, reason: str) -> bool:
         self.timeouts.append((channel_id, user_id, seconds, reason))
@@ -254,6 +259,17 @@ async def test_mecho_says_each_quoted_line_as_its_own_message(h: Harness) -> Non
     report = await h.run("mod", '!mecho "hi {$chatter.display}" "second line"  "third"')
     assert report.result.code == 0 and report.send is None
     assert h.outbox.sent == [(CHANNEL_ID, "hi Mod"), (CHANNEL_ID, "second line"), (CHANNEL_ID, "third")]
+    # It sends the lines itself, so its message stays empty; the run log reads what it sent.
+    assert report.result.message is None and report.logged_message == "hi Mod\nsecond line\nthird"
+    assert should_log_run(report, LogLevel.OUTPUT)
+
+
+async def test_latency_is_one_round_trip_to_twitch(h: Harness) -> None:
+    report = await h.run("alice", "!latency | echo pong, {_}ms to Twitch")
+    assert report.send == "pong, 123ms to Twitch"
+    h.twitch.refuse = "503"
+    failed = await h.run("mod", "!latency")  # alice's tier is on its cooldown now
+    assert failed.result.code == Code.FAIL and "didn't answer" in (failed.result.message or "")
 
 
 async def test_mecho_takes_at_most_ten_lines(h: Harness) -> None:
