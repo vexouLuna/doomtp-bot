@@ -7,8 +7,9 @@ running twice (its `active_key`). Every job takes the same lock, so jobs never r
 rate-limited provider sees one caller.
 
 The runtime keeps the runs in `jobs.job_runs`, audits what is done to them and retries a job whose fill
-failed. When the provider pauses (its daily budget is spent, or the service kept failing), the job waits
-in its step until the provider asks again, then resumes where it stopped. A cancel or a shutdown is seen
+failed. When the provider pauses (its daily budget is spent, or the service kept failing), the step defers
+the job (`StepDeferred`): it is queued again to start when the provider asks again, keeping the lock, and
+resumes where it stopped. A cancel or a shutdown is seen
 between two requests: the step never stops mid-write, since it writes through the bot's shared `chatlog`
 connection. A shutdown queues the job again at the next start.
 
@@ -21,7 +22,6 @@ keep their replies.
 
 from __future__ import annotations
 
-import asyncio
 import datetime as dt
 from dataclasses import dataclass, fields
 from typing import Any, Final
@@ -40,6 +40,7 @@ from vex_platform.jobs import (
     Registry,
     RunStopped,
     StepContext,
+    StepDeferred,
     StepError,
     StepRefused,
 )
@@ -59,7 +60,6 @@ STARTUP = "startup"
 GAPS, RANGE = "gaps", "range"
 OPEN_STATES = ("queued", "running", "paused")
 OFF = "backfill is off for this channel"
-PAUSE_POLL_S = 1.0  # how often a job waiting out a provider pause looks for a cancel
 CANCEL_WAIT_S = 2.0  # how long a cancel waits for a running job to stop before answering
 
 
@@ -134,7 +134,7 @@ def _widen(queued: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
 
 
 def count(event: str, run: JobRun) -> None:
-    """A runtime hook: count what happens to backfill jobs (started, paused, retrying, requeued, and how
+    """A runtime hook: count what happens to backfill jobs (started, paused, retrying, deferred, requeued, and how
     each ended) on `/metrics` (ADR-0015)."""
     if run.kind == KIND:
         metrics.BACKFILL_JOBS.inc(event=event)
@@ -146,36 +146,32 @@ def register(registry: Registry, service: BackfillService) -> JobKind:
     async def fill(ctx: StepContext) -> None:
         p = ctx.payload
         channel_id = p["channel_id"]
-        while True:
-            login = service.login_if_enabled(channel_id)
-            if login is None:
-                p["error"] = OFF
-                ctx.log.warning("%s: cancelled", OFF)
-                await ctx.runtime.cancel(ctx.run_id, wait=0)
-                raise RunStopped()
-            if p["kind"] == GAPS:
-                gaps = await service.open_gaps(channel_id, login)  # the ones still open now
-            else:
-                gaps = [Gap(channel_id, login, p["from_ms"], p["to_ms"])]
-            result = await service.fill_many(
-                gaps,
-                progress=lambda done, total: ctx.progress(done, total, "items"),  # gaps
-                should_stop=ctx.should_stop,
-                job_id=ctx.run_id,
-            )
-            p["fetched"] = p.get("fetched", 0) + result.fetched
-            p["inserted"] = p.get("inserted", 0) + result.inserted
-            p["complete"] = result.complete
-            if result.stopped:
-                raise RunStopped()
-            if result.retry_at_ms is None:
-                break
-            ctx.log.info("the history service paused until %s", dt.datetime.fromtimestamp(
-                result.retry_at_ms / 1000, dt.UTC).isoformat())  # fmt: skip
-            await ctx.save()
-            while (wait_ms := result.retry_at_ms - now_ms()) > 0:
-                await ctx.check_stop()
-                await asyncio.sleep(min(PAUSE_POLL_S, wait_ms / 1000))
+        login = service.login_if_enabled(channel_id)
+        if login is None:
+            p["error"] = OFF
+            ctx.log.warning("%s: cancelled", OFF)
+            await ctx.runtime.cancel(ctx.run_id, wait=0)
+            raise RunStopped()
+        if p["kind"] == GAPS:
+            gaps = await service.open_gaps(channel_id, login)  # the ones still open now
+            ctx.log.debug("%d open gaps: %s", len(gaps), ", ".join(f"{g.from_ms}-{g.to_ms}" for g in gaps))
+        else:
+            gaps = [Gap(channel_id, login, p["from_ms"], p["to_ms"])]
+        result = await service.fill_many(
+            gaps,
+            progress=lambda done, total: ctx.progress(done, total, "items"),  # gaps
+            should_stop=ctx.should_stop,
+            job_id=ctx.run_id,
+        )
+        p["fetched"] = p.get("fetched", 0) + result.fetched
+        p["inserted"] = p.get("inserted", 0) + result.inserted
+        p["complete"] = result.complete
+        if result.stopped:
+            raise RunStopped()
+        if result.retry_at_ms is not None:
+            # Queued again at this step to start then, keeping the lock (vex-platform 0.7.0).
+            until = dt.datetime.fromtimestamp(result.retry_at_ms / 1000, dt.UTC)
+            raise StepDeferred("the history service paused", until)
         if result.error == NOT_LOGGED:
             raise StepRefused("the history service doesn't log this channel")
         if result.error:
