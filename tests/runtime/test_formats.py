@@ -52,3 +52,9 @@ async def test_the_command_and_the_accessors_agree() -> None:
     assert r.send == "23 Oct 21:30, 50%, 22nd"
     assert (await run(make_runtime(), "!format number lots")).result.code == ErrorCode.E_TYPE
     assert (await run(make_runtime(), "!format colour 1")).result.code == Code.USAGE
+
+
+async def test_duration_stays_the_cast_and_human_formats_it() -> None:
+    """`:duration` reads `1h30m` as seconds (the cast); `:human` is a duration's formatter."""
+    r = await run(make_runtime(), "!echo 1h30m | echo {_:duration} {5400:human}")
+    assert r.send == "5400 1h 30m"
