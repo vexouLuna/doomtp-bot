@@ -9,12 +9,13 @@ on:
 
 jobs:
   conventions:
-    uses: vexouLuna/conventions/.github/workflows/conventions-check.yml@v2.1.1
-    secrets: inherit
+    uses: vexouLuna/conventions/.github/workflows/conventions-check.yml@v3.0.0
+    secrets:
+      CONVENTIONS_PRIVATE_PATTERNS: ${{ secrets.CONVENTIONS_PRIVATE_PATTERNS }}
 
   ci:
     # The suite runs against a real Postgres, not a stand-in (ADR-0014). Same major as compose runs.
-    uses: vexouLuna/conventions/.github/workflows/python-ci.yml@v2.1.1
+    uses: vexouLuna/conventions/.github/workflows/python-ci.yml@v3.0.0
     with:
       postgres: true
       # The Twitch CLI is Twitch's event simulator, for the EventSub handshake tests (ADR-0001 item 5).
@@ -64,7 +65,7 @@ jobs:
     # A pull request builds the image and stops there. Pushes to main and dev and release tags publish
     # one (ADR-0013, ADR-0021).
     needs: ci
-    uses: vexouLuna/conventions/.github/workflows/publish-image.yml@v2.1.1
+    uses: vexouLuna/conventions/.github/workflows/publish-image.yml@v3.0.0
     permissions:
       contents: read
       packages: write
