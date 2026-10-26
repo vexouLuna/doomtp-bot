@@ -1,6 +1,6 @@
 # ADR-0037: Listed forms, `switch`, multi-branch `ifelse`, returned fields and `format`
 
-**Status:** Accepted, 2026-10-24
+**Status:** Accepted, 2026-10-24; built in v0.21.0
 **Date:** 2026-10-23
 **Deciders:** Project owner
 
@@ -159,7 +159,7 @@ for formatting inside a placeholder.
 |------|---------|------|
 | `format time <value> [pattern]` | `format time {$now.unix} DD MMM HH:mm` | `23 Oct 21:30` |
 | `format ago <value>` | `format ago {channel.last_death}` | `3h 2m ago` |
-| `format duration <seconds>` | `format duration 90061` | `1d 1h 1m 1s` (`:human` keeps two units) |
+| `format duration <seconds>` | `format duration 90061` | `1d 1h 1m 1s` (`{x:human}` keeps two units) |
 | `format number <value> [decimals]` | `format number 1234567.891 2` | `1,234,567.89` |
 | `format percent <value> [decimals]` | `format percent 0.4567 1` | `45.7%` |
 | `format ordinal <value>` | `format ordinal 22` | `22nd` |
@@ -167,8 +167,10 @@ for formatting inside a placeholder.
 - `time` and `ago` take epoch seconds or ISO 8601 text, in the channel's timezone. Pattern tokens are
   Moment-style: `YYYY YY MM MMM MMMM DD D ddd dddd HH H hh mm ss A`, everything else literal; default
   `YYYY-MM-DD HH:mm`. Not strftime: `%` reads as a modulo to people who write expressions.
-- The accessors are the same six: `{x:time}`, `{x:time(DD MMM HH:mm)}`, `{x:ago}`, `{x:duration}`,
-  `{x:number(2)}`, `{x:percent(1)}`, `{x:ordinal}`. A pattern runs to the closing `)`.
+- The accessors are the same, except for durations: `{x:time}`, `{x:time(DD MMM HH:mm)}`, `{x:ago}`,
+  `{x:number(2)}`, `{x:percent(1)}`, `{x:ordinal}`. A pattern runs to the closing `)`. `:duration` was
+  already the cast that reads `1h30m` as seconds, so it stays that, and a duration's formatter is the
+  existing `:human` (two units, `1h 30m`).
 - `message` is the text and `data` the same text, so `-> channel.x` stores it.
 - A value that isn't a number or a time fails with 232 (`E_TYPE`).
 
@@ -181,12 +183,17 @@ for formatting inside a placeholder.
 
 ## Action items
 
-1. `FORMS` table with `kind = "form"`, served by `/api/v1/commands` and `!help`; doomtp-web lists them.
-2. Multi-branch `ifelse` (parser, spec C.3, railroad, corpus).
-3. `switch` (parser, AST, executor, preflight, explain, spec §8.3, corpus, editor).
-4. `result` primitive and the inferred `data_schema`; "Returns" tables in doomtp-web.
-5. `format` command and the six accessors.
-6. Before 3–5: count custom commands named `switch`, `result` or `format` in production.
+1. [x] `FORMS` table with `kind = "form"`, served by `/api/v1/commands` and `!help`; doomtp-web lists them.
+   *(`runtime/forms.py`, v0.21.0; doomtp-web#109.)*
+2. [x] Multi-branch `ifelse` (parser, spec C.3, railroad, corpus). *(v0.21.0.)*
+3. [x] `switch` (parser, AST, executor, preflight, explain, spec §8.3, corpus, editor). *(v0.21.0.)*
+4. [x] `result` primitive and the inferred `data_schema`; "Returns" tables in doomtp-web. *(The endings
+   come from `lang/ast.endings`, v0.21.0; doomtp-web#109.)*
+5. [x] `format` command and the accessors. *(`runtime/formats.py`, v0.21.0; `:human` for durations, as
+   above.)*
+6. [ ] Before 3–5: count custom commands named `switch`, `result` or `format` in production. *(The public
+   API showed none on 2026-10-24; personal aliases and unpublished commands still need a bot admin's
+   count.)*
 
 ## Decisions
 
