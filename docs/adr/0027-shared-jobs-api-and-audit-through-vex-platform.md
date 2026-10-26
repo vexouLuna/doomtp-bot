@@ -83,8 +83,9 @@ runtime runs one at a time, so the rate-limited provider still sees a single cal
   cancel from `!backfill cancel` or `DELETE /api/v1/.../backfill/{id}` now stops a running job too, not
   only a queued one; the answer waits up to two seconds for it to stop.
 - **Progress** comes from `fill_many`, one item per gap.
-- **A provider pause** (its daily budget spent) holds the job in its step until the time the provider
-  gave, still answering a cancel; it isn't a failure. A failed fill is retried with the runtime's
+- **A provider pause** (its daily budget spent) defers the job (`StepDeferred`, vex-platform 0.7.0): it
+  is queued again, keeping the lock, to start at the time the provider gave, and a cancel meanwhile
+  drops it; it isn't a failure and doesn't use up an attempt. A failed fill is retried with the runtime's
   backoff, from where it stopped; a channel the provider doesn't log fails at once.
 - **Consent** stays in the step: a job whose channel turned backfill off while it waited cancels itself.
 - `!backfill` and the v1 routes queue, list and cancel through the runtime, with the same replies. The
