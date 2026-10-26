@@ -34,6 +34,7 @@ from doomtp_bot.lang.parser import (
     parse,
 )
 from doomtp_bot.runtime.explain import explain
+from doomtp_bot.runtime.forms import FORMS
 from doomtp_bot.runtime.namespaces import CONTEXT_ROOTS, RESERVED_EVERYWHERE
 from doomtp_bot.runtime.preflight import MAX_CC_DEPTH, MAX_INVOCATIONS
 from doomtp_bot.runtime.result import ErrorCode
@@ -189,21 +190,26 @@ async def language(request: Request) -> dict[str, Any]:
     }
 
 
-# architecture §4.2
+# architecture §4.2; the forms, ADR-0037
 @router.get("/commands")
 async def commands(request: Request) -> dict[str, Any]:
-    """Every built-in command with its usage, parameters and examples."""
+    """Every built-in command with its usage, parameters and examples, then the language's forms (`ifelse`,
+    `switch`, the operators): `kind` says which, and a form's `usage` is its syntax."""
     runtime = _runtime(request)
+    specs = [c.spec for c in runtime.registry.all()] + system_specs(runtime.resolver)
+    entries = [(spec, "command", spec.usage()) for spec in specs]
+    entries += [(form.spec, "form", form.syntax) for form in FORMS]
     listing = []
-    for spec in [c.spec for c in runtime.registry.all()] + system_specs(runtime.resolver):
+    for spec, kind, usage in entries:
         listing.append(
             {
                 "name": spec.name,
+                "kind": kind,
                 "module": spec.module,
                 "aliases": list(spec.aliases),
                 "summary": with_sign(spec.summary, DEFAULT_PREFIX),
                 "description": with_sign(spec.description, DEFAULT_PREFIX),
-                "usage": spec.usage(),
+                "usage": usage,
                 "required_role": spec.required_role,
                 "input": str(spec.input),
                 "params": [

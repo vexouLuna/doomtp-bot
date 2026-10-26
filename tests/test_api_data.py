@@ -441,9 +441,14 @@ async def test_publications_and_custom_commands_are_public(
     # Run once at v1, then edited by its author: the channel page can say it changed since.
     publication, _ = (await service.publications_in(CHANNEL_ID))[0]
     await service.touch_run(publication, 1)
-    await service.edit(command, "echo more hyped", channel_id=CHANNEL_ID, prefix="!")
+    command = await service.edit(command, "echo more hyped", channel_id=CHANNEL_ID, prefix="!")
     edited = (await client.get(f"/api/v1/channels/{CHANNEL_LOGIN}/publications")).json()["publications"][0]
     assert (edited["version"], edited["last_run_version"]) == (2, 1)
+    assert edited["data"] == {}  # no `result` stage: no Returns table
+
+    await service.edit(command, "result level=9 -- hyped", channel_id=CHANNEL_ID, prefix="!")
+    returned = (await client.get(f"/api/v1/channels/{CHANNEL_LOGIN}/publications")).json()["publications"][0]
+    assert returned["data"] == {"": "{level: str, message: str?}"}  # ADR-0037
 
     disabled = await client.patch(
         f"/api/v1/channels/{CHANNEL_LOGIN}/publications/hype",

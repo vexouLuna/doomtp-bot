@@ -408,6 +408,42 @@ async def test_an_ifelse_counts_as_its_larger_branch() -> None:
     assert over.result.code == ErrorCode.E_TOO_MANY
 
 
+async def test_ifelse_takes_the_first_condition_that_holds() -> None:
+    line = "!random {n}-{n} | ifelse {_ == 1} ( echo a ) {_ == 2} ( echo b ) {_ >= 2} ( echo c ) ( echo d )"
+    for n, said in ((1, "a"), (2, "b"), (3, "c"), (0, "d")):
+        assert (await run(make_runtime(), line.replace("{n}", str(n)))).send == said
+    r = await run(make_runtime(), "!ifelse {false} ( echo a ) {1 + 1 == 2} ( echo b ) ( echo c )")
+    assert r.send == "b"
+    r = await run(make_runtime(), "!ifelse {false} ( echo a ) {false} ( echo b ) && echo after")
+    assert (r.result.code, r.send) == (0, "after")
+
+
+async def test_switch_runs_the_first_case_equal_to_its_value() -> None:
+    line = "!random {n}-{n} | switch {_} 1.0 ( echo one ) 2 ( echo two ) two ( echo text ) ( echo other )"
+    for n, said in ((1, "one"), (2, "two"), (9, "other")):
+        assert (await run(make_runtime(), line.replace("{n}", str(n)))).send == said
+    r = await run(make_runtime(), "!echo two | switch {_} TWO ( echo upper ) two ( echo lower )")
+    assert r.send == "lower"  # text compares case-sensitively, as == does
+    r = await run(make_runtime(), "!switch nope 1 ( echo one ) && echo after")
+    assert (r.result.code, r.send) == (0, "after")
+
+
+async def test_a_switch_counts_as_its_largest_branch() -> None:
+    fifteen = " && ".join(["echo x"] * 15)
+    fits = await run(make_runtime(), f"!switch 1 1 ( {fifteen} ) 2 ( {fifteen} ) ( echo x ) && echo y")
+    assert fits.result.code == 0
+    over = await run(make_runtime(), f"!switch 1 1 ( echo x ) 2 ( {fifteen} && echo x ) && echo y")
+    assert over.result.code == ErrorCode.E_TOO_MANY
+
+
+async def test_a_refused_command_in_a_switch_case_waits_for_its_case() -> None:
+    runtime = make_runtime(policy=DenyAdd())
+    r = await run(runtime, "!switch b a ( plus 1 2 ) b ( echo fine )")
+    assert (r.result.code, r.send) == (0, "fine")
+    r = await run(runtime, "!switch {missing.thing} a ( echo a )")
+    assert r.result.code != 0
+
+
 async def test_moderation_cancellation_discards_writes() -> None:
     store = InMemoryVariableStore()
     rt = make_runtime(store=store)
@@ -517,3 +553,22 @@ async def test_random_on_an_empty_collection_fails_with_e_empty() -> None:
 async def test_random_rejects_something_that_is_neither_a_range_nor_a_collection() -> None:
     r = await run(make_runtime(), "!random banana")
     assert r.result.code == Code.USAGE and "list or map" in (r.send or "")
+
+
+# ── result (ADR-0037 G9) ───────────────────────────────────────────────────
+async def test_result_returns_fields_and_its_message() -> None:
+    r = await run(make_runtime(), "!weather Lisbon | result c={_[celsius]} town=Lisbon -- {_[celsius]}°C")
+    assert r.send == "21.5°C"
+    assert r.result.data == {"c": 21.5, "town": "Lisbon", "message": "21.5°C"}  # a lone placeholder keeps its type
+
+
+async def test_result_takes_the_piped_message_without_one_of_its_own() -> None:
+    r = await run(make_runtime(), "!echo hi | result n=1")
+    assert (r.send, r.result.data) == ("hi", {"n": "1", "message": "hi"})
+    r = await run(make_runtime(), "!result n=1")
+    assert (r.send, r.result.data) == (None, {"n": "1", "message": None})
+
+
+async def test_result_refuses_a_message_key_and_a_word_without_a_key() -> None:
+    for line in ("!result message=hi", "!result n=1 oops"):
+        assert (await run(make_runtime(), line)).result.code == Code.USAGE

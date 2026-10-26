@@ -1,9 +1,10 @@
 Line        ::= Prefix Gap? ( Expr | Expression )
 Expr        ::= Pipeline ( ( '&&' | '||' ) Pipeline )*
 Pipeline    ::= Stage ( '|' Stage )*
-Stage       ::= ( Group | IfElse | Invocation ) ( ( '->' | '-->' ) VarRef )?
+Stage       ::= ( Group | IfElse | Switch | Invocation ) ( ( '->' | '-->' ) VarRef )?
 Group       ::= '(' Expr ')'
-IfElse      ::= Prefix? 'ifelse' Argument Group Group?
+IfElse      ::= Prefix? 'ifelse' Argument Group ( Argument Group )* Group?
+Switch      ::= Prefix? 'switch' Argument ( Argument Group )+ Group?
 Invocation  ::= Prefix? Gap? '@'? Name Argument*
               | Prefix? Gap? ( 'check' | 'calc' ) Expression
 Argument    ::= ( Text | Quoted | Escape | Placeholder )+

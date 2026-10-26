@@ -101,6 +101,18 @@ def render(value: Value | Any) -> str:
     return str(value)
 
 
+class Keyed(str):
+    """An argument written `key={…}`: the text every command sees, carrying the placeholder's value so
+    `result` can keep its type (ADR-0037)."""
+
+    value: Any
+
+    def __new__(cls, text: str, value: Any) -> Keyed:
+        self = super().__new__(cls, text)
+        self.value = value
+        return self
+
+
 # ── type conversion (§7.4) ──────────────────────────────────────────────────
 class ConversionError(ValueError):
     pass

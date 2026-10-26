@@ -36,6 +36,7 @@ from doomtp_bot.lang.ast import (
     Span,
     Store,
     Subst,
+    Switch,
     Text,
     Unary,
     VarRef,
@@ -44,7 +45,7 @@ from doomtp_bot.lang.ast import (
 )
 from doomtp_bot.lang.errors import ParseError
 from doomtp_bot.lang.parser import Context, parse_template
-from doomtp_bot.runtime import ops
+from doomtp_bot.runtime import formats, ops
 from doomtp_bot.runtime.context import Args, CommandContext, ExecContext, Publisher, RunCancelled
 from doomtp_bot.runtime.ops import ExprError
 from doomtp_bot.runtime.result import (
@@ -59,6 +60,7 @@ from doomtp_bot.runtime.result import (
 from doomtp_bot.runtime.values import (
     MISSING,
     ConversionError,
+    Keyed,
     convert,
     descend,
     is_missing,
@@ -249,6 +251,20 @@ class Executor:
                 if branch is None:
                     return Result.success()
                 return await self._eval(branch, ctx, scope, prev, stdin)
+            case Switch(subject, cases, default):
+                # The subject once, then each case value until one equals it, as `==` does (ADR-0037).
+                try:
+                    value = await self.argument(subject, ctx, scope, prev)
+                    picked = default
+                    for case, group in cases:
+                        if ops.compare("==", value, await self.argument(case, ctx, scope, prev)):
+                            picked = group
+                            break
+                except (MissingValue, ExprError, SubstFailed) as exc:
+                    return expression_failure(exc)
+                if picked is None:
+                    return Result.success()
+                return await self._eval(picked, ctx, scope, prev, stdin)
             case Store(inner, target, append):
                 r = await self._eval(inner, ctx, scope, prev, stdin)
                 if not r.ok:
@@ -446,6 +462,14 @@ class Executor:
             if expanded is not None:
                 expanded[ph.span] = render(value)
             return value
+        if _is_keyed(arg):  # `key={…}`: text, but `result` keeps the value (ADR-0037)
+            key: Text = arg[0]  # type: ignore[assignment]
+            ph = arg[1]  # type: ignore[assignment]
+            value = await self.placeholder_value(ph, ctx, scope, prev)
+            text = render(value)
+            if expanded is not None:
+                expanded[ph.span] = text
+            return Keyed(key.value + text, value)
         return await self.expand(arg, ctx, scope, prev, expanded)
 
     async def condition(self, cond: tuple[Part, ...], ctx: ExecContext, scope: Scope, prev: Result | None) -> Any:
@@ -514,6 +538,8 @@ class Executor:
                     return await self.template(value, ctx, scope, prev)
                 if name == "human":
                     return ops.human(value)
+                if name in formats.KINDS:
+                    return formats.apply(name, value, choices[0] if choices else None, ctx.channel.timezone, ctx.now())
                 try:
                     return await convert(value, name, choices=choices, resolve_user=ctx.resolve_user)
                 except ConversionError:
@@ -745,6 +771,18 @@ def store_key(value: Any) -> str | int:
 
 def _is_lone(arg: tuple[Part, ...]) -> bool:
     return len(arg) == 1 and isinstance(arg[0], Placeholder)
+
+
+KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _is_keyed(arg: tuple[Part, ...]) -> bool:
+    return (
+        len(arg) == 2
+        and isinstance(arg[0], Text)
+        and KEY_RE.fullmatch(arg[0].value) is not None
+        and isinstance(arg[1], Placeholder)
+    )
 
 
 class UsageError(Exception):

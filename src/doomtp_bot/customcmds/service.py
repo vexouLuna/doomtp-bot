@@ -35,6 +35,8 @@ log = structlog.get_logger(__name__)
 
 # Not only digits: `!100` is a number, and a line starting with one is an expression (ADR-0018).
 NAME_RE = re.compile(r"^(?![0-9]+$)[a-z0-9][a-z0-9_-]{0,31}$")
+# The language's own words (spec §8.2, §8.3): a command of either name could never be run (ADR-0037).
+FORM_NAMES = frozenset({"ifelse", "switch"})
 MAX_BODY_CHARS = 2000
 QUOTA_PER_USER = 50
 Status = Literal["active", "deleted", "banned"]
@@ -282,6 +284,8 @@ class CustomCommandService:
         name = name.lower()
         if not NAME_RE.match(name):
             raise CustomCommandError("command names: lowercase letters, digits, _ and -, up to 32, not only digits")
+        if name in FORM_NAMES:
+            raise CustomCommandError(f"{name} is part of the command language")
         self.check_body(body, name, channel_id=channel_id, prefix=prefix)
         if await self.by_owner(owner_user_id, name) is not None:
             raise CustomCommandError(f"you already have a command named {name}")
@@ -386,6 +390,8 @@ class CustomCommandService:
         alias = alias.lower()
         if not NAME_RE.match(alias):
             raise CustomCommandError("aliases: lowercase letters, digits, _ and -, up to 32, not only digits")
+        if alias in FORM_NAMES:
+            raise CustomCommandError(f"{alias} is part of the command language")
         if await self.personal(user_id, alias) is not None:
             raise CustomCommandError(f"you already have an alias named {alias}")
         async with transaction(self.conn):
@@ -417,6 +423,8 @@ class CustomCommandService:
         name = name.lower()
         if not NAME_RE.match(name):
             raise CustomCommandError("published names: lowercase letters, digits, _ and -, up to 32, not only digits")
+        if name in FORM_NAMES:
+            raise CustomCommandError(f"{name} is part of the command language")
         existing = await fetch_one(
             self.conn,
             "SELECT command_id FROM custom_command_publications WHERE channel_id = %s AND name = %s",

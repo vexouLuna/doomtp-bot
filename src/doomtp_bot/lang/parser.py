@@ -36,6 +36,7 @@ from doomtp_bot.lang.ast import (
     Ref,
     Store,
     Subst,
+    Switch,
     Text,
     Unary,
     VarRef,
@@ -70,7 +71,9 @@ REGISTERED_ROOTS = frozenset(
 PATH_ROOTS = frozenset({"event", "match", "cooldown", "denied", "run", "cmd"})
 RESULT_FIELDS = ("code", "message", "data")
 # Accessors and casts after `:` (spec §2.7). `choice(a,b)` is handled separately.
-ACCESSORS = ("len", "keys", "values", "template", "human")
+ACCESSORS = ("len", "keys", "values", "template", "human", "time", "ago", "number", "percent", "ordinal")
+# Formatters that take an option in ( ): a pattern, which runs to the `)`, or a number of decimals (ADR-0037).
+OPTION_ACCESSORS = ("time", "number", "percent")
 TYPE_NAMES = ("str", "int", "float", "bool", "range", "duration", "user", "url", "list", "map")
 # Commands whose arguments are one expression (ADR-0018 item 6).
 EXPR_COMMANDS = frozenset({"check", "calc"})
@@ -435,8 +438,8 @@ class _Parser:
             return self._error(ParseErrorCode.RESERVED_OPERATOR)
         if op is not None:
             return self._error(ParseErrorCode.UNEXPECTED_OPERATOR, op=op)
-        # Only an ifelse leaves words behind: an invocation reads every word up to an operator.
-        return self._error(ParseErrorCode.EXPR_SYNTAX, hint="ifelse ends after its ( else ) branch")
+        # Only an ifelse or a switch leaves words behind: an invocation reads every word up to an operator.
+        return self._error(ParseErrorCode.EXPR_SYNTAX, hint="ifelse and switch end after their last ( … ) branch")
 
     def require_operand(self, op: str) -> None:
         """`_ EOF %E_MISSING_OPERAND`: skip spaces, and fail if the line ends where an operand must follow."""
@@ -507,15 +510,15 @@ class _Parser:
         return target
 
     def primary(self) -> Node:
-        """Primary <- Group / &Reserved %RESERVED / &OperatorToken %UNEXPECTED / IfElse / Invocation"""
+        """Primary <- Group / &Reserved %RESERVED / &OperatorToken %UNEXPECTED / IfElse / Switch / Invocation"""
         op = self.operator_at(self.pos)
         if op == "(":
             return self.group()
         if op is not None:
             raise self._operator_error(op)
-        ifelse = self.if_else()
-        if ifelse is not None:
-            return ifelse
+        form = self.if_else() or self.switch()
+        if form is not None:
+            return form
         return self.invocation()
 
     def group(self) -> Group:
@@ -538,15 +541,25 @@ class _Parser:
             return Group(inner)
         raise self._operator_error(op)
 
-    def if_else(self) -> IfElse | None:
-        """IfElse <- CmdPrefix? 'ifelse' WS Word WS Group (WS Group)?"""
+    def form_keyword(self, keyword: str) -> bool:
+        """CmdPrefix? keyword Boundary, then an operand: consumed only when it is there."""
         start = self.pos
         self.cmd_prefix()
-        if not (self.s.startswith("ifelse", self.pos) and self.boundary(self.pos + len("ifelse"))):
+        if not (self.s.startswith(keyword, self.pos) and self.boundary(self.pos + len(keyword))):
             self.pos = start
+            return False
+        self.pos += len(keyword)
+        self.require_operand(keyword)
+        return True
+
+    def if_else(self) -> IfElse | None:
+        """IfElse <- CmdPrefix? 'ifelse' WS IfCase (WS IfCase)* (WS Branch)?    IfCase <- Word WS Branch
+
+        More conditions nest into the else branch: `ifelse c1 ( t1 ) c2 ( t2 ) ( e )` is
+        `IfElse(c1, t1, Group(IfElse(c2, t2, e)))`, so the executor and preflight see plain `ifelse`s.
+        """
+        if not self.form_keyword("ifelse"):
             return None
-        self.pos += len("ifelse")
-        self.require_operand("ifelse")
         if self.operator_at(self.pos) is not None:
             raise self._error(ParseErrorCode.EXPR_SYNTAX, hint="ifelse needs a condition, then ( a command )")
         cond = self.word()
@@ -554,11 +567,55 @@ class _Parser:
         then = self.branch()
         if then is None:
             raise self._error(ParseErrorCode.EXPR_SYNTAX, hint="ifelse needs ( a command ) after its condition")
-        save = self.pos
-        if self.ws() and (else_ := self.branch()) is not None:
-            return IfElse(cond, then, else_)
-        self.pos = save
-        return IfElse(cond, then, None)
+        cases = [(cond, then)]
+        else_: Group | None = None
+        while True:
+            save = self.pos
+            if not self.ws():
+                break
+            else_ = self.branch()
+            if else_ is not None:
+                break  # a lone branch is the else, and the last
+            if self.eof() or self.operator_at(self.pos) is not None:
+                self.pos = save
+                break
+            cond = self.word()
+            if not (self.ws() and (then := self.branch()) is not None):
+                self.pos = save  # not another condition: End says what is wrong with it
+                break
+            cases.append((cond, then))
+        for cond, then in reversed(cases[1:]):
+            else_ = Group(IfElse(cond, then, else_))
+        return IfElse(cases[0][0], cases[0][1], else_)
+
+    def switch(self) -> Switch | None:
+        """Switch <- CmdPrefix? 'switch' WS Word (WS Word WS Branch)+ (WS Branch)?    (ADR-0037)"""
+        if not self.form_keyword("switch"):
+            return None
+        if self.operator_at(self.pos) is not None:
+            raise self._error(ParseErrorCode.EXPR_SYNTAX, hint="switch needs a value, then its cases")
+        subject = self.word()
+        cases: list[tuple[Arg, Group]] = []
+        default: Group | None = None
+        while True:
+            save = self.pos
+            if not self.ws():
+                break
+            default = self.branch()
+            if default is not None:
+                break  # a lone branch is the default, and the last
+            if self.eof() or self.operator_at(self.pos) is not None:
+                self.pos = save
+                break
+            value = self.word()
+            self.require_operand("switch")
+            then = self.branch()
+            if then is None:
+                raise self._error(ParseErrorCode.EXPR_SYNTAX, hint="switch needs ( a command ) after each case")
+            cases.append((value, then))
+        if not cases:
+            raise self._error(ParseErrorCode.EXPR_SYNTAX, hint="switch needs a case: a value, then ( a command )")
+        return Switch(subject, tuple(cases), default)
 
     def branch(self) -> Group | None:
         """Branch <- Group / TightGroup    (a branch must be a group, so a glued `(` opens one too)"""
@@ -1064,6 +1121,13 @@ class _Parser:
         while self.pos < self.n and _is_ident_char(self.s[self.pos]):
             self.pos += 1
         name = self.s[start : self.pos]
+        if name in OPTION_ACCESSORS and self.s.startswith("(", self.pos):
+            end = self.s.find(")", self.pos)
+            if end < 0 or "}" in self.s[self.pos : end]:
+                raise self._error(ParseErrorCode.BAD_PLACEHOLDER, at, hint=f"{name}(…) ends with )")
+            option = self.s[self.pos + 1 : end]
+            self.pos = end + 1
+            return Access(target, name, (option,))
         if name in ACCESSORS or name in TYPE_NAMES:
             return Access(target, name)
         raise self._error(ParseErrorCode.UNKNOWN_OP, at, op=":" + name)
@@ -1344,6 +1408,9 @@ def _number_invocations(node: Node) -> Node:
             case IfElse(cond, then, else_):
                 then = Group(visit(then.inner))
                 return IfElse(cond, then, Group(visit(else_.inner)) if else_ is not None else None)
+            case Switch(subject, cases, default):
+                numbered = tuple((value, Group(visit(group.inner))) for value, group in cases)
+                return Switch(subject, numbered, Group(visit(default.inner)) if default is not None else None)
         raise TypeError(f"not an AST node: {n!r}")
 
     return visit(node)

@@ -23,6 +23,7 @@ from doomtp_bot.lang.ast import (
     Ref,
     Store,
     Subst,
+    Switch,
     arg_exprs,
     arg_substitutions,
     invocations,
@@ -69,6 +70,8 @@ def first_invocations(node: Node) -> list[Invocation]:
             return first_invocations(inner)
         case IfElse(_, then, else_):
             return first_invocations(then) + (first_invocations(else_) if else_ is not None else [])
+        case Switch():
+            return [inv for branch in node.branches for inv in first_invocations(branch)]
     raise TypeError(f"not an AST node: {node!r}")
 
 
@@ -91,6 +94,9 @@ def stdin_receivers(node: Node) -> set[int]:
                 walk(then)
                 if else_ is not None:
                     walk(else_)
+            case Switch():
+                for branch in n.branches:
+                    walk(branch)
             case Invocation():
                 pass
 
@@ -226,17 +232,22 @@ def preflight(
         return None
 
     def check_cond(
-        cond: IfElse, here: ExecContext, resolved_map: dict[int, Resolved], stack: tuple[str, ...]
+        form: IfElse | Switch, here: ExecContext, resolved_map: dict[int, Resolved], stack: tuple[str, ...]
     ) -> Preflight | None:
-        """`ifelse`'s condition runs before either branch, so only commands before it have results."""
-        first = first_invocations(cond.then)[0].index
-        failure = check_exprs(None, [p for p in cond.cond if isinstance(p, Placeholder)], first, here)
-        if failure is not None:
-            return failure
-        for inner in arg_substitutions(cond.cond):
-            failure = check_invocation(inner, here, resolved_map, set(), stack, first)
+        """`ifelse`'s condition, or `switch`'s subject and case values, run before any branch, so only
+        commands before them have results."""
+        if isinstance(form, IfElse):
+            first, words = first_invocations(form.then)[0].index, [form.cond]
+        else:
+            first, words = first_invocations(form.cases[0][1])[0].index, [form.subject, *(v for v, _ in form.cases)]
+        for word in words:
+            failure = check_exprs(None, [p for p in word if isinstance(p, Placeholder)], first, here)
             if failure is not None:
                 return failure
+            for inner in arg_substitutions(word):
+                failure = check_invocation(inner, here, resolved_map, set(), stack, first)
+                if failure is not None:
+                    return failure
         return None
 
     def check_body(
@@ -328,23 +339,24 @@ def preflight(
             case Store(inner, _, _):
                 return sub(inner) or check_store(n, here)
             case IfElse(_, then, else_):
-                return check_cond(n, here, resolved_map, stack) or check_branches(then, else_, sub)
+                branches: list[Node] = [then] if else_ is None else [then, else_]
+                return check_cond(n, here, resolved_map, stack) or check_branches(branches, sub)
+            case Switch():
+                return check_cond(n, here, resolved_map, stack) or check_branches(list(n.branches), sub)
         return None
 
-    def check_branches(
-        then: Node, else_: Node | None, sub: Callable[[Node, bool], Preflight | None]
-    ) -> Preflight | None:
-        """Both branches are checked, but only one runs, so an `ifelse` counts as its larger branch."""
+    def check_branches(branches: list[Node], sub: Callable[[Node, bool], Preflight | None]) -> Preflight | None:
+        """Every branch is checked, but only one runs, so an `ifelse` or `switch` counts as its largest."""
         nonlocal counted
-        start = counted
-        failure = sub(then, True)
-        if failure is not None:
-            return failure
-        taken = counted - start
-        counted = start
-        failure = sub(else_, True) if else_ is not None else None
-        counted = start + max(taken, counted - start)
-        return failure
+        start, largest = counted, 0
+        for branch in branches:
+            counted = start
+            failure = sub(branch, True)
+            if failure is not None:
+                return failure
+            largest = max(largest, counted - start)
+        counted = start + largest
+        return None
 
     failure = walk(node, ctx, outcome.resolved, stdin_receivers(node), ())
     return failure if failure is not None else outcome
