@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol
 
 import structlog
@@ -80,6 +80,7 @@ class ChannelManager:
         """
         if self.is_banned(channel_id) and not rejoin:
             raise ChannelBanned(login)
+        await self.follow_rename(channel_id, login)  # a channel joined before under another name
         await self._mark_joined(channel_id, login, actor)
         failed = await self._subscribe(channel_id)
         log.info("channel.join", channel=login, failed=failed)
@@ -121,10 +122,20 @@ class ChannelManager:
         """Store a joined channel's new login after a Twitch rename. The channel keeps its id, so it stays
         joined, but `/channels/{login}` and `!part` go by the login stored here."""
         settings = self.policy.channel_settings(channel_id)
-        if settings is None or settings.login == login:
+        if settings is None or settings.login == login.lower():
             return
-        await self.policy.mutate(lambda repo: repo.ensure_channel(channel_id, login, Actor(None, "system")))
+        await self.policy.sync_logins({channel_id: login})  # and the login snapshots that name them
         log.info("channel.renamed", channel_id=channel_id, before=settings.login, after=login)
+
+    async def sync_logins(self, lookup: Callable[[Sequence[str]], Awaitable[dict[str, str]]]) -> None:
+        """At startup: every known channel's login as Twitch has it now, by id, so a rename while the bot
+        was down (or in a channel that never chats) doesn't leave `/channels/{login}` on the old name."""
+        ids = [c.channel_id for c in self.policy.channels()]
+        users: dict[str, str] = {}
+        for start in range(0, len(ids), 100):  # Helix takes 100 ids per request
+            users.update(await lookup(ids[start : start + 100]))
+        for channel_id in await self.policy.sync_logins(users):
+            log.info("channel.renamed", channel_id=channel_id, after=users[channel_id].lower())
 
     async def subscribe_all(self) -> None:
         """Subscribe every joined channel (at startup and after re-authorization)."""

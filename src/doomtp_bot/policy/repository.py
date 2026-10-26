@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from doomtp_bot.audit.log import write_audit
@@ -17,6 +18,15 @@ from doomtp_bot.storage.db import Connection, fetch_one, fetch_value, transactio
 class Actor:
     user_id: str | None
     via: str = "chat"  # chat | api | web | system
+
+
+# Copies of a user's login kept beside their id, so listings need no Twitch lookup: (table, id, login).
+_LOGIN_SNAPSHOTS = (
+    ("role_members", "user_id", "user_login"),
+    ("global_admins", "user_id", "user_login"),
+    ("ignore_list", "user_id", "user_login"),
+    ("custom_commands", "owner_user_id", "owner_login"),
+)
 
 
 class PolicyRepository:
@@ -56,6 +66,26 @@ class PolicyRepository:
             )
             await self._audit(actor, "channel.join", channel_id, login, None, {"login": login})
             return True
+
+    async def sync_logins(self, users: Mapping[str, str]) -> list[str]:
+        """Twitch users' current logins, by id: the channel's own login and every login snapshot (roles,
+        admins, ignore lists, custom command owners). Returns the ids of channels whose login changed."""
+        renamed: list[str] = []
+        async with transaction(self.conn):
+            for user_id, login in users.items():
+                cur = await self.conn.execute(
+                    "UPDATE channels SET login = %s, updated_at = %s WHERE channel_id = %s AND login <> %s",
+                    (login, now_ms(), user_id, login),
+                )
+                if cur.rowcount:
+                    renamed.append(user_id)
+                for table, id_column, login_column in _LOGIN_SNAPSHOTS:
+                    await self.conn.execute(
+                        f"UPDATE {table} SET {login_column} = %s"
+                        f" WHERE {id_column} = %s AND {login_column} IS DISTINCT FROM %s",
+                        (login, user_id, login),
+                    )
+        return renamed
 
     async def set_channel_field(self, channel_id: str, column: str, value: object, actor: Actor) -> None:
         if column not in CHANNEL_COLUMNS:

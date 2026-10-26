@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
@@ -227,6 +227,40 @@ async def test_a_channel_renamed_on_twitch_is_found_by_its_new_login(h: Harness)
     renamed = h.policy.channel_by_login("doomtp_new")
     assert renamed is not None and renamed.channel_id == CHANNEL_ID and h.channels.is_active(CHANNEL_ID)
     assert len(await h.rows("SELECT 1 FROM messages")) == 1
+
+
+async def test_logins_follow_twitch_by_id_at_startup(h: Harness) -> None:
+    """vexoulz became vexouluna: the channel and every stored copy of the login follow, by id."""
+    bot = h.dbs.bot
+    await bot.execute("INSERT INTO roles (id, channel_id, name, rank, created_at) VALUES (90, '100', 'crew', 10, 0)")
+    await bot.execute("INSERT INTO role_members VALUES (90, '100', 'doomtp', NULL, 0, NULL)")
+    await bot.execute("INSERT INTO global_admins VALUES ('100', 'doomtp', 'system', 0)")
+    await bot.execute(
+        "INSERT INTO ignore_list (channel_id, user_id, user_login, added_at) VALUES ('*', '100', 'doomtp', 0)"
+    )
+    await bot.execute(
+        "INSERT INTO custom_commands (id, owner_user_id, owner_login, name, current_version, created_at, updated_at)"
+        " VALUES ('cc_x', '100', 'doomtp', 'x', 1, 0, 0)"
+    )
+    asked: list[list[str]] = []
+
+    async def lookup(ids: Sequence[str]) -> dict[str, str]:
+        asked.append(list(ids))
+        return {"100": "DoomTP_New"}
+
+    await h.channels.sync_logins(lookup)
+    assert asked == [[c.channel_id for c in h.policy.channels()]]
+    renamed = h.policy.channel_by_login("doomtp_new")
+    assert renamed is not None and renamed.channel_id == CHANNEL_ID
+    for sql in (
+        "SELECT user_login FROM role_members",
+        "SELECT user_login FROM global_admins",
+        "SELECT user_login FROM ignore_list",
+        "SELECT owner_login FROM custom_commands",
+    ):
+        async with await bot.execute(sql) as cur:
+            assert [tuple(r.values()) for r in await cur.fetchall()] == [("doomtp_new",)], sql
+    assert await h.policy.sync_logins({"100": "doomtp_new"}) == []  # nothing left to change
 
 
 async def test_deleted_while_running_means_no_reply(h: Harness) -> None:

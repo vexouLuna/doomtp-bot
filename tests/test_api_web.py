@@ -296,7 +296,11 @@ async def test_the_site_lists_joined_channels_without_signing_in(client: httpx.A
     site = (await client.get("/api/v1/site")).json()
     assert site["admin_enabled"] is True and site["version"] and site["syntax_version"]
     assert [c["login"] for c in site["channels"]] == [CHANNEL_LOGIN]
-    assert set(site["channels"][0]) == {"login", "prefix", "tier"}  # nothing the home page doesn't show
+    # Only what the home page shows (ADR-0016); the owner approved each of these as public.
+    assert set(site["channels"][0]) == {
+        "login", "prefix", "tier", "read_only", "can_moderate", "logs_public", "joined_at"
+    }  # fmt: skip
+    assert site["channels"][0]["read_only"] is False and site["channels"][0]["joined_at"] > 0
 
 
 async def test_roles_and_grammar_are_public(client: httpx.AsyncClient) -> None:
@@ -372,8 +376,17 @@ async def test_published_packs_are_public(client: httpx.AsyncClient, app: Any) -
 async def test_a_channel_page_summary_is_public(client: httpx.AsyncClient) -> None:
     channel = (await client.get(f"/api/v1/site/channels/{CHANNEL_LOGIN}")).json()
     assert channel == {"login": CHANNEL_LOGIN, "prefix": channel["prefix"], "tier": channel["tier"],
-                       "status": "joined", "active": True, "channel_id": CHANNEL_ID}  # fmt: skip
+                       "status": "joined", "active": True, "channel_id": CHANNEL_ID, "read_only": False,
+                       "can_moderate": False, "logs_public": True, "joined_at": channel["joined_at"]}  # fmt: skip
     assert (await client.get("/api/v1/site/channels/nobody")).status_code == 404
+
+
+async def test_a_channel_where_the_bot_never_speaks_is_read_only(client: httpx.AsyncClient, app: Any) -> None:
+    policy = app.state.policy
+    await policy.mutate(lambda repo: repo.set_channel_field(CHANNEL_ID, "bot_enabled", False, Actor(None, "test")))
+    await policy.mutate(lambda repo: repo.set_channel_field(CHANNEL_ID, "public_log", False, Actor(None, "test")))
+    channel = (await client.get(f"/api/v1/site/channels/{CHANNEL_LOGIN}")).json()
+    assert (channel["read_only"], channel["logs_public"]) == (True, False)
 
 
 async def test_command_listings_carry_what_the_command_table_shows(client: httpx.AsyncClient, app: Any) -> None:

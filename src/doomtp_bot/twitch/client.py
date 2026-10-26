@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Coroutine, Sequence
 from contextvars import ContextVar
@@ -186,14 +187,18 @@ class _BotClient(twitchio.Client):
     async def event_chat_notification(self, payload: Any) -> None:
         await self.service.emit(payload.id, _with_raw(mapping.chat_notification(payload)))
 
+    # These payloads carry no id of their own, so a redelivery is known by what it says happened.
     async def event_message_delete(self, payload: Any) -> None:
-        await self.service.emit(None, _with_raw(mapping.message_deleted(payload)))
+        event = mapping.message_deleted(payload)
+        await self.service.emit(f"delete:{event.message_id}", _with_raw(event))
 
     async def event_chat_clear(self, payload: Any) -> None:
-        await self.service.emit(None, _with_raw(mapping.chat_cleared(payload)))
+        event = mapping.chat_cleared(payload)
+        await self.service.emit(f"chat_clear:{event.channel_id}:{event.at}", _with_raw(event))
 
     async def event_chat_clear_user(self, payload: Any) -> None:
-        await self.service.emit(None, _with_raw(mapping.user_messages_cleared(payload)))
+        event = mapping.user_messages_cleared(payload)
+        await self.service.emit(f"user_clear:{event.channel_id}:{event.target_user_id}:{event.at}", _with_raw(event))
 
     async def event_follow(self, payload: Any) -> None:
         await self.service.emit(None, _with_raw(mapping.follow(payload)))
@@ -783,6 +788,21 @@ class TwitchService:
             self._users_by_login.move_to_end(login)
             return cached
         return await self._fetch_user(login, logins=[login])
+
+    async def ping_ms(self) -> int:
+        """How long one Helix request takes, start to answer, in milliseconds: `latency`, and so `ping`."""
+        if self.client is None or self.bot_id is None:
+            raise RuntimeError("twitch client is not connected")
+        started = time.monotonic()
+        await self.client.fetch_users(ids=[self.bot_id], token_for=self.bot_id)
+        return round((time.monotonic() - started) * 1000)
+
+    async def logins_by_id(self, user_ids: Sequence[str]) -> dict[str, str]:
+        """Current logins for up to 100 user ids; ids Twitch doesn't know are left out."""
+        if self.client is None or not user_ids:
+            return {}
+        users = await self.client.fetch_users(ids=list(user_ids), token_for=self.bot_id)
+        return {u.id: self._remember(u.id, u.name, u.display_name or u.name)["name"] for u in users if u.name}
 
     async def resolve_user_id(self, user_id: str) -> dict[str, str] | None:
         login = self._logins_by_id.get(user_id)

@@ -132,19 +132,21 @@ async def test_startup_queues_one_job_for_the_gaps_that_later_requests_join(
 async def test_a_paused_provider_holds_the_job_and_it_resumes_where_it_stopped(
     dbs: Databases, make_backfill_jobs: MakeBackfillJobs
 ) -> None:
-    """The provider spent its budget: the job waits in its step rather than failing."""
+    """The provider spent its budget: the job is deferred until then rather than failing."""
     paused = HistoryResponse(error_code=PAUSED, retry_at_ms=now_ms() + 300)
     page = HistoryResponse((privmsg(2000, "a"),), hit_limit=True)
     provider = FakeProvider(HistoryResponse((privmsg(3000, "b"),)), responses=[page, paused])
     jobs = await make_backfill_jobs(await backfill_for(dbs, provider), start=True)
+    deferred = metrics.BACKFILL_JOBS.value(event="deferred")
     job = await jobs.queue_range(CHANNEL_ID, 1100, 6000, "chat:1")
     assert job is not None
 
     done = await until(jobs, job.id, "done", "failed")
     await jobs.service.writer.stop()
     assert (done.state, done.complete, done.fetched) == ("done", True, 2)
+    assert metrics.BACKFILL_JOBS.value(event="deferred") == deferred + 1
     assert provider.calls[-1] == (CHANNEL_ID, 2000, 6001, 1000, 0)  # where the pause stopped it
-    assert (await jobs.runtime.get(job.id)).attempts == 0  # waited, not retried
+    assert (await jobs.runtime.get(job.id)).attempts == 0  # deferred, not retried
 
 
 async def test_a_running_job_stops_at_its_next_request_when_cancelled(

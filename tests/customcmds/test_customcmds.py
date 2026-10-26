@@ -327,6 +327,15 @@ async def test_a_name_is_not_only_digits(h: Harness) -> None:
     assert await h.say("alice", "!8ball") == "yes"
 
 
+async def test_a_name_is_not_a_form(h: Harness) -> None:
+    """`!switch …` and `!ifelse …` always parse as the forms (ADR-0037), so no command takes their names."""
+    from doomtp_bot.customcmds.service import CustomCommandError
+
+    for name in ("switch", "ifelse"):
+        with pytest.raises(CustomCommandError, match="part of the command language"):
+            await h.add("alice", name, "echo 1")
+
+
 async def test_bodies_are_parsed_in_body_context(h: Harness) -> None:
     """`{arg.*}` is only available inside a body, so a body may use it and a typed line may not."""
     await h.add("alice", "args", "echo you said {arg.1+ ?? nothing}")
@@ -529,6 +538,13 @@ async def test_help_lists_custom_commands_the_caller_can_run(h: Harness) -> None
 
     alices = await h.say("alice", "!help")
     assert alices is not None and "custom: hype" in alices  # her own alias
+
+
+async def test_help_explains_a_form(h: Harness) -> None:
+    """`ifelse` isn't a command, but a reader asks `!help` about it as if it were (ADR-0037)."""
+    detail = await h.say("bob", "!help switch")
+    assert detail is not None and detail.startswith("switch <value> <case> ( then )")
+    assert await h.say("bob", '!help "&&"') == "a && b: Then: run b only if a succeeded"
 
 
 # ── what the service checks, whoever calls it ──────────────────────────────
