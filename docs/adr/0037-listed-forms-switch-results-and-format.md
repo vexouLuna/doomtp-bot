@@ -191,9 +191,9 @@ for formatting inside a placeholder.
    come from `lang/ast.endings`, v0.21.0; doomtp-web#109.)*
 5. [x] `format` command and the accessors. *(`runtime/formats.py`, v0.21.0; `:human` for durations, as
    above.)*
-6. [ ] Before 3–5: count custom commands named `switch`, `result` or `format` in production. *(The public
-   API showed none on 2026-10-24; personal aliases and unpublished commands still need a bot admin's
-   count.)*
+6. [x] Before 3–5: count custom commands named `switch`, `result` or `format` in production. *(The public
+   API showed none on 2026-10-24, and the owner confirmed on 2026-10-26 that no alias or unpublished
+   command has those names either.)*
 
 ## Decisions
 
@@ -210,4 +210,4 @@ The owner answered the open questions on 2026-10-24:
 
 Before reserving `switch`, `result` and `format`, the public API was checked on 2026-10-24: no channel
 publishes a command by those names and no pack has one. Personal aliases and unpublished commands aren't
-public, so a bot admin should run the count in action item 6 before the release.
+public; the owner confirmed on 2026-10-26 that none has those names (action item 6).
