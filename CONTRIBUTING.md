@@ -122,8 +122,8 @@ Merging into `dev` deploys nothing. Production changes only when a release reach
    git switch -c chore/back-merge-main origin/dev && git merge --no-ff origin/main
    ```
 
-To roll back, run `scripts/rollback.sh` on the server with the previous `:vX.Y.Z`, which downgrades the schema
-and pins `BOT_IMAGE` to it (README).
+To roll back, run `scripts/rollback.sh` on the server with the previous `:vX.Y.Z`, which downgrades the schema,
+pins `BOT_IMAGE` to it and reinstalls the packs from it (README).
 
 **A hotfix** branches from `main` (`hotfix/…`), raises the version itself and merges into `main`:
 
