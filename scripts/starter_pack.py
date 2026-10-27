@@ -181,9 +181,9 @@ QUOTES: tuple[Derived, ...] = (
         name="quote",
         summary="Read, add and delete the channel's quotes",
         body=(
-            f'ifelse {{{_NO_ARG} == "add"}} ( quote_add {{arg.2+raw}} )'
-            f' ( ifelse {{{_NO_ARG} == "del" or {_NO_ARG} == "delete"}} ( quote_del {{arg.2}} )'
-            f' ( ifelse {{{_NO_ARG} == "-"}} ( quote_random ) ( quote_show {{arg.1}} ) ) )'
+            f"switch {{{_NO_ARG}}} add ( quote_add {{arg.2+raw}} )"
+            " del ( quote_del {arg.2} ) delete ( quote_del {arg.2} )"
+            " - ( quote_random ) ( quote_show {arg.1} )"
         ),
         declarations=('1+ name=what required=no "a number, or add <text>, or del <number>"',),
     ),
@@ -218,11 +218,10 @@ QUOTES: tuple[Derived, ...] = (
         name="quote_show",
         summary="Say one quote",
         body=(
-            f"ifelse {{({_Q}[arg.number] ?? 0) != 0}}"
-            f' ( ifelse {{"game" in {_Q}[arg.number]}}'
+            f"ifelse {{({_Q}[arg.number] ?? 0) == 0}} ( fail 3 there is no quote #{{arg.number}} )"
+            f' {{"game" in {_Q}[arg.number]}}'
             f" ( echo #{{arg.number}}: {{{_Q}[arg.number][text]}} [{{{_Q}[arg.number][game]}}, {{{_Q}[arg.number][date]}}] )"
-            f" ( echo #{{arg.number}}: {{{_Q}[arg.number][text]}} [{{{_Q}[arg.number][date]}}] ) )"
-            " ( fail 3 there is no quote #{arg.number} )"
+            f" ( echo #{{arg.number}}: {{{_Q}[arg.number][text]}} [{{{_Q}[arg.number][date]}}] )"
         ),
         declarations=('1 name=number type=int required=yes "which quote, by number"',),
         internal=True,
@@ -282,14 +281,11 @@ PYRAMID: tuple[Derived, ...] = (
         name="pyramid",
         summary="Pyramid stats, the top builders and breakers, facts and settings",
         body=(
-            f'ifelse {{{_WHAT} == "-" or {_WHAT} == "stats"}} ( pyramid_stats )'
-            f' ( ifelse {{{_WHAT} == "top"}} ( pyramid_top {{arg.2 ?? builders}} )'
-            f' ( ifelse {{{_WHAT} == "fact"}} ( pyramid_fact {{arg.2 ?? 0}} )'
-            f' ( ifelse {{{_WHAT} == "settings"}} ( pyramid_settings )'
-            f' ( ifelse {{{_WHAT} == "addfact"}} ( pyramid_addfact {{arg.2+raw ?? -}} )'
-            f' ( ifelse {{{_WHAT} == "delfact"}} ( pyramid_delfact {{arg.2 ?? 0}} )'
-            f' ( ifelse {{{_WHAT} == "exempt"}} ( pyramid_exempt {{arg.2 ?? -}} )'
-            " ( pyramid_set {arg.1} {arg.2+ ?? -} ) ) ) ) ) ) )"
+            f"switch {{{_WHAT}}} - ( pyramid_stats ) stats ( pyramid_stats )"
+            " top ( pyramid_top {arg.2 ?? builders} ) fact ( pyramid_fact {arg.2 ?? 0} )"
+            " settings ( pyramid_settings ) addfact ( pyramid_addfact {arg.2+raw ?? -} )"
+            " delfact ( pyramid_delfact {arg.2 ?? 0} ) exempt ( pyramid_exempt {arg.2 ?? -} )"
+            " ( pyramid_set {arg.1} {arg.2+ ?? -} )"
         ),
         declarations=(
             '1+ name=what required=no "stats, top [breakers], fact [number], settings, or a setting:'
@@ -301,8 +297,8 @@ PYRAMID: tuple[Derived, ...] = (
         summary="Reacts to pyramid trigger events, through the pack's own trigger",
         body=(
             f"ifelse {{{_IS_PYRAMID}}}"
-            ' ( ifelse {event.phase == "step"} ( pyramid_step )'
-            ' ( ifelse {event.phase == "complete"} ( pyramid_complete ) ( pyramid_broken ) ) )'
+            ' ( ifelse {event.phase == "step"} ( pyramid_step ) {event.phase == "complete"} ( pyramid_complete )'
+            " ( pyramid_broken ) )"
         ),
         note="runs in every channel with the pyramid module on; `!module disable pyramid` turns it off",
     ),
@@ -340,8 +336,8 @@ PYRAMID: tuple[Derived, ...] = (
         body=(
             f"ifelse {{{_COUNTS_BROKEN}}}"
             f" ( ifelse {{event.by_bot}} ( var incr {_PS}[broken_by_bot] && true )"
-            f" ( ifelse {{event.self_broken}} ( var incr {_PS}[fumbled] && true )"
-            f" ( var incr {_PS}[broken_by_chatters] && var incr publisher.channel.chatter.pyramid_breaks && true ) ) )"
+            f" {{event.self_broken}} ( var incr {_PS}[fumbled] && true )"
+            f" ( var incr {_PS}[broken_by_chatters] && var incr publisher.channel.chatter.pyramid_breaks && true ) )"
         ),
         internal=True,
     ),
@@ -352,10 +348,10 @@ PYRAMID: tuple[Derived, ...] = (
             "ifelse {(arg.number ?? 0) > 0}"
             f" ( ifelse {{arg.number <= ({_PF}:len ?? 0)}} ( echo #{{arg.number}}: {{{_PF}[arg.number - 1]}} )"
             " ( fail 3 there is no pyramid fact #{arg.number} ) )"
-            f" ( ifelse {{({_PY}[shared_facts] ?? true) and ({_PSHARED}:len ?? 0) > 0}}"
+            f" {{({_PY}[shared_facts] ?? true) and ({_PSHARED}:len ?? 0) > 0}}"
             f" ( ifelse {{({_PF}:len ?? 0) > 0}} ( random {{{_PF} + {_PSHARED}}} ) ( random {{{_PSHARED}}} ) )"
-            f" ( ifelse {{({_PF}:len ?? 0) > 0}} ( random {{{_PF}}} )"
-            " ( fail 3 no pyramid facts yet. Add one with {$channel.prefix}pyramid addfact <fact> ) ) )"
+            f" {{({_PF}:len ?? 0) > 0}} ( random {{{_PF}}} )"
+            " ( fail 3 no pyramid facts yet. Add one with {$channel.prefix}pyramid addfact <fact> )"
         ),
         declarations=('1 name=number type=int required=no "the channel\'s fact by number; none for a random one"',),
         internal=True,
@@ -400,28 +396,28 @@ PYRAMID: tuple[Derived, ...] = (
         name="pyramid_set",
         summary="Change a pyramid setting (moderators)",
         body=(
-            ' ifelse {arg.1 == "chance" or arg.1 == "chanceup" or arg.1 == "chancedown"}'
+            'ifelse {arg.1 == "chance" or arg.1 == "chanceup" or arg.1 == "chancedown"}'
             " ( ifelse {0 <= (arg.2:int ?? -1) <= 100}"
             f' ( ( ifelse {{arg.1 != "chancedown"}} ( var set {_PY}[chance_up] {{arg.2:int}} ) ( true ) )'
             f' && ( ifelse {{arg.1 != "chanceup"}} ( var set {_PY}[chance_down] {{arg.2:int}} ) ( true ) )'
             f" && echo pyramid break chance is now {_CHANCES} )"
             " ( fail 2 usage: pyramid {arg.1} <0-100> ) )"
-            ' ( ifelse {arg.1 == "minpeak"}'
+            ' {arg.1 == "minpeak"}'
             " ( ifelse {2 <= (arg.2:int ?? 0) <= 50}"
             f" ( var set {_PY}[min_peak] {{arg.2:int}} && echo pyramids now count from {{arg.2:int}} wide )"
             " ( fail 2 usage: pyramid minpeak <2-50> ) )"
-            ' ( ifelse {arg.1 == "sharedfacts"}'
+            ' {arg.1 == "sharedfacts"}'
             ' ( ifelse {arg.2 == "on" or arg.2 == "off"}'
             f' ( var set {_PY}[shared_facts] {{arg.2 == "on"}} && echo shared pyramid facts are {{arg.2}} )'
             " ( fail 2 usage: pyramid sharedfacts <on|off> ) )"
-            ' ( ifelse {arg.1 == "congrats" and arg.2 != "-"}'
+            ' {arg.1 == "congrats" and arg.2 != "-"}'
             ' ( ifelse {arg.2 == "reset"}'
             f" ( ( var del {_PY}[congrats] || true ) && echo pyramid congratulations are back to the default )"
             f' ( var set {_PY}[congrats] {{arg.2+raw}} && ifelse {{arg.2 == "off"}}'
             " ( echo pyramid congratulations are off ) ( echo pyramid congratulations set ) ) )"
             " ( fail 2 usage: pyramid <stats|top|fact|settings|chance|chanceup|chancedown|minpeak|exempt|congrats"
             "|sharedfacts"
-            "|addfact|delfact> ) ) ) )"
+            "|addfact|delfact> )"
         ),
         declarations=(
             '1 name=setting required=yes "chance, chanceup, chancedown, minpeak, congrats or sharedfacts"',
@@ -434,12 +430,10 @@ PYRAMID: tuple[Derived, ...] = (
         name="pyramid_exempt",
         summary="Set the rank that is never broken (moderators)",
         body=(
-            f'( ifelse {{arg.role == "off"}} ( var set {_PY}[exempt_rank] {_NOBODY} )'
-            f' ( ifelse {{arg.role == "broadcaster"}} ( var set {_PY}[exempt_rank] 100 )'
-            f' ( ifelse {{arg.role == "mod"}} ( var set {_PY}[exempt_rank] 80 )'
-            f' ( ifelse {{arg.role == "vip"}} ( var set {_PY}[exempt_rank] 60 )'
-            f' ( ifelse {{arg.role == "sub"}} ( var set {_PY}[exempt_rank] 20 )'
-            " ( fail 2 usage: pyramid exempt <off|sub|vip|mod|broadcaster> ) ) ) ) ) )"
+            f"( switch {{arg.role}} off ( var set {_PY}[exempt_rank] {_NOBODY} )"
+            f" broadcaster ( var set {_PY}[exempt_rank] 100 ) mod ( var set {_PY}[exempt_rank] 80 )"
+            f" vip ( var set {_PY}[exempt_rank] 60 ) sub ( var set {_PY}[exempt_rank] 20 )"
+            " ( fail 2 usage: pyramid exempt <off|sub|vip|mod|broadcaster> ) )"
             f" && var set {_PY}[exempt] {{arg.role}}"
             ' && ifelse {arg.role == "off"} ( echo nobody is exempt from pyramid breaks )'
             " ( echo {arg.role} and up are exempt from pyramid breaks )"
@@ -452,9 +446,9 @@ PYRAMID: tuple[Derived, ...] = (
         name="pyramid_addfact",
         summary="Add a pyramid fact for this channel (moderators)",
         body=(
-            ' ifelse {arg.1+raw == "-"} ( fail 2 usage: pyramid addfact <fact> )'
-            " ( ifelse {arg.1+raw:len > 300} ( fail 2 a pyramid fact is at most 300 characters )"
-            f" ( echo {{arg.1+raw}} --> {_PF} && echo added pyramid fact #{{{_PF}:len}} ) )"
+            'ifelse {arg.1+raw == "-"} ( fail 2 usage: pyramid addfact <fact> )'
+            " {arg.1+raw:len > 300} ( fail 2 a pyramid fact is at most 300 characters )"
+            f" ( echo {{arg.1+raw}} --> {_PF} && echo added pyramid fact #{{{_PF}:len}} )"
         ),
         declarations=('1+ name=fact required=yes "the fact"',),
         internal=True,
