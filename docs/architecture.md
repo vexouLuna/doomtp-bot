@@ -821,8 +821,8 @@ The deployment setup is unchanged from revision 2, apart from the notes below.
   Postgres is left running: its image never moves, and bouncing it would drop connections for nothing
   (ADR-0014). Nothing outside the homelab connects to it, which is the same constraint ADR-0001 was
   chosen under. Rolling back is `scripts/rollback.sh <image>`: it backs up, downgrades the schema with the
-  image running now (the only one that has the downgrade), pins `BOT_IMAGE` to the target and starts it
-  without the migrate step (ADR-0022).
+  image running now (the only one that has the downgrade), pins `BOT_IMAGE` to the target, reinstalls the
+  packs with the target's own pack script and starts it without the migrate step (ADR-0022).
 - **What the image holds:** the locked dependency set and the installed package — static files,
   the built editor bundle and the copy of the grammar the language page shows (force-included into the
   wheel, since `docs/` isn't installed). There is no Node in the image, which is why `web-editor/`'s
