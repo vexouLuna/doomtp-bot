@@ -450,7 +450,8 @@ not drive failures.
 
 To **roll back**, run `scripts/rollback.sh ghcr.io/<owner>/doomtp-bot:vX.Y.Z` (or any `:<sha>` tag). It takes
 a backup, downgrades the schema to what that image expects using the image running now, points `BOT_IMAGE`
-in `.env` at it and restarts the bot on it (ADR-0022). Updates then stay on that tag until you change
+in `.env` at it, reinstalls the packs with that image's own `starter_pack.py`, so the bodies are in a
+language it can parse, and restarts the bot on it (ADR-0022). Updates then stay on that tag until you change
 `BOT_IMAGE` back. A downgrade that drops a column drops its data, so the backup it took is the way
 back to that data. Releases are cut from `dev` into `main` (CONTRIBUTING.md, ADR-0021).
 

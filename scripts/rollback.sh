@@ -4,8 +4,9 @@
 #     scripts/rollback.sh ghcr.io/<owner>/doomtp-bot:0.1.0
 #
 # Run it on the server, in the checkout that holds compose.yaml, .env and secrets/. Only the image running now has the code to undo its own
-# migrations, so it does the downgrade, after a backup; then BOT_IMAGE in .env points at the target and the
-# bot restarts on it without the migrate step. A downgrade that drops a column drops its data: the backup
+# migrations, so it does the downgrade, after a backup; then BOT_IMAGE in .env points at the target, the
+# target's own pack script puts back the pack commands it ships, and the bot restarts on it without the
+# migrate step. A downgrade that drops a column drops its data: the backup
 # is the way back to it.
 set -euo pipefail
 
@@ -49,6 +50,16 @@ if grep -q '^BOT_IMAGE=' .env; then
 else
     echo "BOT_IMAGE=$target" >>.env
 fi
+# The packs as the target ships them: the newer ones may use language it can't parse. Its own script, on
+# the schema it now has; exit 2 means the bot was never signed in, so there is nothing to reinstall.
+packs=0
+if docker run --rm --entrypoint test "$target" -f /app/scripts/starter_pack.py; then
+    BOT_IMAGE=$target "${compose[@]}" --profile tools run --rm --no-deps starter-pack || packs=$?
+fi
 # --no-deps: no migrate step, which would only upgrade again (and an image from before ADR-0022 has none).
 BOT_IMAGE=$target "${compose[@]}" up -d --no-deps doomtp-bot
 echo "rolled back to $target. BOT_IMAGE in .env now names it, so a deploy of BOT_IMAGE stays there until you change it."
+if [ "$packs" -ne 0 ] && [ "$packs" -ne 2 ]; then
+    echo "the target's pack script failed (exit $packs): rerun it with docker compose --profile tools run --rm starter-pack" >&2
+    exit 1
+fi
