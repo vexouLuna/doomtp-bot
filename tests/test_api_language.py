@@ -49,7 +49,7 @@ async def test_parse_in_line_context_says_when_text_is_not_a_command(client: htt
     response = await client.post(
         "/api/v1/parse", json={"text": "just chatting", "context": "line", "channel": CHANNEL_LOGIN}
     )
-    assert response.json() == {"ok": True, "syntax_version": "2.0", "not_a_command": True}
+    assert response.json() == {"ok": True, "syntax_version": "2.1", "not_a_command": True}
 
 
 async def test_parse_uses_the_named_channels_prefix(client: httpx.AsyncClient) -> None:
@@ -85,7 +85,7 @@ async def test_explain_can_run_without_sending_anything(client: httpx.AsyncClien
 
 async def test_language_describes_the_syntax_for_the_editor(client: httpx.AsyncClient) -> None:
     body = (await client.get("/api/v1/language")).json()
-    assert body["syntax_version"] == "2.0"
+    assert body["syntax_version"] == "2.1"
     assert "||" in body["operators"] and "->" in body["operators"] and "$chatter" in body["roots"]
     assert "display" in body["bot_fields"]["$chatter"] and body["accessors"] == [
         "len",
