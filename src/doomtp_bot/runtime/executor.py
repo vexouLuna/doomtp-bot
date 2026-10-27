@@ -538,7 +538,7 @@ class Executor:
                     return await self.template(value, ctx, scope, prev)
                 if name == "human":
                     return ops.human(value)
-                if name in formats.KINDS:
+                if name in formats.KINDS and name != "duration":  # `:duration` is the cast; `:human` formats
                     return formats.apply(name, value, choices[0] if choices else None, ctx.channel.timezone, ctx.now())
                 try:
                     return await convert(value, name, choices=choices, resolve_user=ctx.resolve_user)

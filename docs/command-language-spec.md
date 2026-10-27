@@ -1,7 +1,7 @@
 # doomtp-bot Command Language — Specification
 
 **Version:** 2.0.0-draft · **Status:** Draft for review · **Date:** 2026-09-28 (1.2: 2026-09-28, 1.1: 2026-09-22, 1.0: 2026-09-16)
-**Syntax version:** 2.0 ([ADR-0018](adr/0018-command-language-v2-expressions-brackets-error-codes.md): expressions, brackets, `$` fields, `->`/`-->`, one code per error)
+**Syntax version:** 2.1 ([ADR-0018](adr/0018-command-language-v2-expressions-brackets-error-codes.md): expressions, brackets, `$` fields, `->`/`-->`, one code per error; 2.1, [ADR-0037](adr/0037-listed-forms-switch-results-and-format.md): multi-branch `ifelse`, `switch`)
 **Supersedes:** [command-language-proposal.md](command-language-proposal.md) (kept for rationale)
 **Normative companions:** [namespaces.md](namespaces.md) (namespaces, types, reserved names) and [variable-access-matrix.md](variable-access-matrix.md) (variable permissions)
 **Runtime design:** [ADR-0005](adr/0005-command-pipeline-runtime.md)
@@ -343,7 +343,7 @@ Subst(inv: Invocation)               # {!cmd args}
 
 A variable read inside an expression is a `VarRef` with an empty path, followed by `Index` nodes: `{channel.stats[kills]}` is `Index(VarRef(channel, stats), Lit("kills"))`. A unary `-` applied to a number literal is folded into the literal.
 
-Each AST MUST record `syntax_version = "2.0"`. Custom command versions (ADR-0009), triggers and callbacks MUST store the syntax version they were parsed with (§11).
+Each AST MUST record `syntax_version = "2.1"`. Custom command versions (ADR-0009), triggers and callbacks MUST store the syntax version they were parsed with (§11).
 
 ---
 
@@ -779,13 +779,13 @@ With `--run`, it also evaluates the expression with a **discarded** write buffer
 
 ## 11. Versioning
 
-- This document is **syntax version 2.0**. Changes that alter how existing valid input parses or evaluates require a **major** version change. Additions that only make previously invalid input valid (e.g. un-reserving `;`) are **minor** version changes.
+- This document is **syntax version 2.1**. Changes that alter how existing valid input parses or evaluates require a **major** version change. Additions that only make previously invalid input valid (e.g. un-reserving `;`) are **minor** version changes.
 - The syntax version covers the grammar and how a body parses. Document 1.1 moved cooldowns from preflight to runtime (§5.2) — a change in *policy outcome*, which 1.0 declared in advance as a minor change (Appendix B item 4). The grammar and every parse are unchanged, so `syntax_version` stays `"1.0"` and no stored body needs migrating.
 - Document 1.2 gave every named runtime error its own code (§6.2, ADR-0018) where they were all code 2, and made `>>` fail on a full list instead of dropping the oldest item. Again the grammar and every parse are unchanged, so `syntax_version` stays `"1.0"`. A stored body that tests for code 2 after one of these errors now sees the new code.
 - Stored bodies keep the syntax version they were parsed with. When the major version changes, the implementation MUST either keep a parser for the old version or migrate bodies automatically.
 - **2.0** (ADR-0018) changes how existing input parses: `>`/`>>` became `->`/`-->`, `{N}` became `{_N}`, the bot's fields took a `$`, reads into values use `[ ]`, and placeholders hold expressions. The implementation keeps only the 2.0 parser. Every stored 1.0 body (custom command versions, triggers, callbacks) was rewritten to 2.0 by `scripts/migrate_v2.py`, which checked each rewrite parsed and marked it `"2.0"`. The script and its `lang/migrate.py` were removed once every deployment had run it (2026-10-23); git history has them. Stored rows still carry `syntax_version`, so a future change can find what it has to rewrite. The script also listed what no rewrite could decide: bodies that read a result's `.code` (a missing placeholder is now 230, not 2), and custom commands whose names 2.0 took (`check`, `calc`, `ifelse`, the operator commands, and names made only of digits). The rewrite changed the stored version in place rather than adding a custom command version, because it didn't change what the command does.
 - **2.0, 2026-10-23:** glued `ifelse` branches (§2.3), and words after the else branch are `E_EXPR_SYNTAX` instead of an internal error. Both only make input that used to fail parse, so `syntax_version` stays `"2.0"` and nothing stored changes.
-- **2.0, 2026-10-24** (ADR-0037): more conditions in `ifelse` (§8.2), and the `switch` form (§8.3). Both only make input that used to fail parse valid, so, as with the glued branches above, `syntax_version` stays `"2.0"` and nothing stored changes. A custom command named `switch` could be called before and can't now, so `switch` and `ifelse` are refused as names.
+- **2.1, 2026-10-24** (ADR-0037): more conditions in `ifelse` (§8.2), and the `switch` form (§8.3). Both only make input that used to fail parse valid, so this is a minor version: bodies saved from now on record `"2.1"`, and stored `"2.0"` bodies parse and run unchanged, so nothing is rewritten. A custom command named `switch` could be called before and can't now, so `switch` and `ifelse` are refused as names.
 - Deferred features are tracked in language proposal §6: the `?` suffix, and `;` behavior.
 
 ---
