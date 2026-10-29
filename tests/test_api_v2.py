@@ -43,7 +43,6 @@ async def test_errors_are_problem_details_under_v2_only(client: httpx.AsyncClien
     assert body["request_id"] == response.headers["x-request-id"]
     # v1 answers as it always did.
     assert (await client.get("/api/v1/channels")).json() == {"detail": "an API key or an admin session is required"}
-    assert (await client.get(f"{V2}/openapi.json")).status_code == 401
 
 
 async def test_an_admin_follows_and_cancels_a_backfill_run(client: httpx.AsyncClient, write_key: str) -> None:
@@ -168,3 +167,10 @@ async def test_the_openapi_lists_the_v2_routes(client: httpx.AsyncClient, write_
     assert {f"{V2}/jobs", f"{V2}/jobs/{{run_id}}/events", f"{V2}/audit"} <= set(schema["paths"])
     docs = await client.get(f"{V2}/docs", headers=auth(write_key))
     assert docs.status_code == 200 and "swagger" in docs.text.lower()
+
+
+async def test_the_v2_spec_and_docs_are_readable_without_a_session(client: httpx.AsyncClient) -> None:
+    spec = await client.get(f"{V2}/openapi.json")
+    assert spec.status_code == 200 and f"{V2}/jobs" in spec.json()["paths"]
+    assert (await client.get(f"{V2}/docs")).status_code == 200
+    assert (await client.get(f"{V2}/jobs")).status_code == 401  # the data stays behind sign-in
