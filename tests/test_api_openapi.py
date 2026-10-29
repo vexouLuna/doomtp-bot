@@ -29,3 +29,11 @@ def test_the_typed_v1_routes_have_response_schemas() -> None:
     for path, method in typed:
         schema = paths[path][method]["responses"]["200"]["content"]["application/json"]["schema"]
         assert "$ref" in schema, (path, method)
+
+
+def test_the_site_routes_have_response_schemas() -> None:
+    paths = create_app(HealthRegistry()).openapi()["paths"]
+    for path in ("/api/v1/site", "/api/v1/site/channels/{login}", "/api/v1/roles", "/api/v1/grammar",
+                 "/api/v1/packs", "/api/v1/channels/{login}/packs", "/api/v1/stats", "/api/v1/channels/{login}/stats"):  # fmt: skip
+        schema = paths[path]["get"]["responses"]["200"]["content"]["application/json"]["schema"]
+        assert "$ref" in schema, path

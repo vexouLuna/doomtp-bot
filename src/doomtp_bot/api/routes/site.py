@@ -11,6 +11,7 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from doomtp_bot import __version__
 from doomtp_bot.api import deps
@@ -28,6 +29,104 @@ from doomtp_bot.policy.snapshot import ChannelSettings
 router = APIRouter(prefix="/api/v1", tags=["site"])
 
 
+class PublicChannel(BaseModel):
+    login: str
+    prefix: str
+    tier: str
+    read_only: bool
+    can_moderate: bool
+    logs_public: bool
+    joined_at: int = Field(description="ms since the epoch")
+
+
+class SiteInfo(BaseModel):
+    version: str
+    syntax_version: str
+    default_prefix: str
+    admin_enabled: bool
+    channels: list[PublicChannel]
+
+
+class SiteChannel(PublicChannel):
+    channel_id: str
+    status: str
+    active: bool
+
+
+class Role(BaseModel):
+    name: str
+    rank: int
+
+
+class Roles(BaseModel):
+    roles: list[Role]
+    custom_rank_range: list[int]
+
+
+class GrammarRule(BaseModel):
+    name: str
+    body: str
+
+
+class GrammarInfo(BaseModel):
+    syntax_version: str
+    text: str
+    rules: list[GrammarRule]
+
+
+class PackJson(BaseModel):
+    """A published pack. Its `commands` are custom-command objects with `internal` and `role` added."""
+
+    name: str
+    summary: str | None
+    scope: str
+    owner_user_id: str | None
+    owner: str | None
+    commands: list[dict[str, Any]]
+
+
+class PackList(BaseModel):
+    packs: list[PackJson]
+
+
+class ChannelPackList(BaseModel):
+    channel: str
+    packs: list[PackJson]
+
+
+class Window(BaseModel):
+    minute: int
+    hour: int
+    day: int
+
+
+class RunsDay(BaseModel):
+    ok: int
+    failed: int
+    cancelled: int
+
+
+class BotStats(BaseModel):
+    version: str
+    release: str | None
+    commit: str | None
+    started_at: int = Field(description="ms since the epoch")
+    uptime_s: int
+    channels: int
+    messages_logged: Window
+    messages_sent: Window
+    runs_day: RunsDay
+    at: int = Field(description="ms since the epoch")
+
+
+class ChannelStats(BaseModel):
+    channel: str
+    messages_logged: Window
+    messages_sent: Window
+    runs_day: RunsDay
+    at: int = Field(description="ms since the epoch")
+
+
 def _public(c: ChannelSettings) -> dict[str, Any]:
     """What anyone may know about a channel the bot is in: its sign and tier, whether the bot speaks
     there (`read_only`: "Bot speaks: off", it logs but never sends), may moderate, and shows its log."""
@@ -42,7 +141,7 @@ def _public(c: ChannelSettings) -> dict[str, Any]:
     }
 
 
-@router.get("/site")
+@router.get("/site", response_model=SiteInfo, summary="What every page needs, and the joined channels")
 async def site(request: Request) -> dict[str, Any]:
     """What every page's chrome needs, and the channels the home page lists (active and joined)."""
     policy = getattr(request.app.state, "policy", None)
@@ -57,7 +156,7 @@ async def site(request: Request) -> dict[str, Any]:
     }
 
 
-@router.get("/site/channels/{login}")
+@router.get("/site/channels/{login}", response_model=SiteChannel, summary="A channel's public page data")
 async def site_channel(request: Request, login: str) -> dict[str, Any]:
     """What a channel's public page prints about it: its sign, its tier and whether the bot is there.
     Any channel the bot knows, so a link to one it left still says so instead of a bare 404.
@@ -71,7 +170,7 @@ async def site_channel(request: Request, login: str) -> dict[str, Any]:
     }
 
 
-@router.get("/roles")
+@router.get("/roles", response_model=Roles, summary="The built-in roles")
 async def roles() -> dict[str, Any]:
     """The built-in roles by rank, and the range channels may give roles of their own."""
     return {
@@ -80,14 +179,14 @@ async def roles() -> dict[str, Any]:
     }
 
 
-@router.get("/grammar")
+@router.get("/grammar", response_model=GrammarInfo, summary="The railroad grammar")
 async def grammar() -> dict[str, Any]:
     """The railroad grammar (spec Appendix D) the language page draws, as text and as rules.
     The diagrams themselves are the committed SVGs under `/static`."""
     return {"syntax_version": SYNTAX_VERSION, "text": GRAMMAR, "rules": GRAMMAR_RULES}
 
 
-@router.get("/explain/{token}")
+@router.get("/explain/{token}", summary="The report behind a chat explain link")
 async def explain_report(request: Request, token: str) -> dict[str, Any]:
     """The report behind a chat `explain` link: short-lived, and only what its caller saw (§4.4)."""
     reports = getattr(request.app.state, "explain_reports", None)
@@ -124,13 +223,13 @@ async def _packs_json(request: Request, channel_id: str, *, include_global: bool
 
 
 # ADR-0012
-@router.get("/packs")
+@router.get("/packs", response_model=PackList, summary="Packs published everywhere")
 async def global_packs(request: Request) -> dict[str, Any]:
     """Packs published everywhere: their commands work in every channel."""
     return {"packs": await _packs_json(request, GLOBAL, include_global=False)}
 
 
-@router.get("/channels/{login}/packs")
+@router.get("/channels/{login}/packs", response_model=ChannelPackList, summary="The packs a channel can use")
 async def channel_packs(request: Request, login: str) -> dict[str, Any]:
     """The packs a channel's chat can use: its own publications and the global ones."""
     settings = _channel(request, login)
@@ -160,7 +259,7 @@ async def _counts(request: Request, scope: str, channel_ids: list[str]) -> dict[
     return found
 
 
-@router.get("/stats")
+@router.get("/stats", response_model=BotStats, summary="What the bot is and has been doing")
 async def stats(request: Request) -> dict[str, Any]:
     """What the bot is and what it has been doing: its version, the tag or branch and commit it was built
     from, how long it has been up, the channels it is in, and chat lines logged and sent and runs over the
@@ -178,7 +277,7 @@ async def stats(request: Request) -> dict[str, Any]:
     }
 
 
-@router.get("/channels/{login}/stats")
+@router.get("/channels/{login}/stats", response_model=ChannelStats, summary="The same counts for one channel")
 async def channel_stats(request: Request, login: str) -> dict[str, Any]:
     """The same counts for one channel."""
     settings = _channel(request, login)

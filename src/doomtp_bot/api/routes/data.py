@@ -493,7 +493,7 @@ def rule_json(policy: PolicyService, scope: str, spec: CommandSpec) -> dict[str,
     }
 
 
-@router.get("/channels/{login}/commands")
+@router.get("/channels/{login}/commands", summary="The commands a channel can run")
 async def channel_commands(request: Request, login: str) -> dict[str, Any]:
     """What this channel's chat can actually run, with the rules that apply here. Public, like the page."""
     settings = _channel(request, login)
@@ -629,7 +629,7 @@ def _custom_json(command: Any) -> dict[str, Any]:
 
 
 # ADR-0012
-@router.get("/custom-commands")
+@router.get("/custom-commands", summary="Shared custom commands")
 async def custom_commands(request: Request, owner: str | None = Query(default=None, max_length=40)) -> dict[str, Any]:
     """Public: what is published everywhere, or one owner's shared commands."""
     service: CustomCommandService = deps.customcmds(request)
@@ -644,7 +644,7 @@ async def custom_commands(request: Request, owner: str | None = Query(default=No
     return {"commands": [_custom_json(c) for c in owned if c.shareable]}
 
 
-@router.get("/channels/{login}/publications")
+@router.get("/channels/{login}/publications", summary="A channel's published commands")
 async def publications(request: Request, login: str) -> dict[str, Any]:
     """Public: the custom commands this channel offers, and who wrote them."""
     settings = _channel(request, login)

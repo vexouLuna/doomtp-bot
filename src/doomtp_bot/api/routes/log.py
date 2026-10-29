@@ -143,7 +143,7 @@ class AuditPage(BaseModel):
     next: int | None
 
 
-@router.get("/channels/{login}/runs", response_model=CommandRunList)
+@router.get("/channels/{login}/runs", response_model=CommandRunList, summary="A channel's recent command runs")
 async def command_runs(
     request: Request,
     login: str,
@@ -161,7 +161,7 @@ async def command_runs(
 
 
 # architecture §3.3
-@router.get("/channels/{login}/messages", response_model=MessageSearch)
+@router.get("/channels/{login}/messages", response_model=MessageSearch, summary="Search a channel's chat log")
 async def search_messages(
     request: Request,
     login: str,
@@ -182,7 +182,7 @@ _KINDS_QUERY = Query(default=None, description="message, notification or moderat
 
 
 # ADR-0025, ADR-0026
-@router.get("/channels/{login}/log", response_model=LogPage)
+@router.get("/channels/{login}/log", response_model=LogPage, summary="A channel's log as one timeline")
 async def channel_log(
     request: Request,
     login: str,
@@ -225,7 +225,9 @@ async def channel_log(
 
 
 # ADR-0025
-@router.get("/channels/{login}/log/coverage", response_model=LogCoverage)
+@router.get(
+    "/channels/{login}/log/coverage", response_model=LogCoverage, summary="When the bot was listening, and the gaps"
+)
 async def channel_log_coverage(
     request: Request,
     login: str,
@@ -241,7 +243,7 @@ async def channel_log_coverage(
 
 
 # ADR-0026
-@router.get("/audit", response_model=AuditPage)
+@router.get("/audit", response_model=AuditPage, summary="The audit trail of changes")
 async def audit(
     request: Request,
     channel: str | None = Query(default=None, max_length=40),
