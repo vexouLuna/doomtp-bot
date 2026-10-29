@@ -14,13 +14,13 @@ from doomtp_bot.core.health import HealthRegistry, Status
 router = APIRouter(tags=["health"])
 
 
-@router.get("/healthz")
+@router.get("/healthz", summary="Liveness check")
 async def healthz() -> dict[str, str]:
     """200 while the event loop is responsive. Used by the Docker HEALTHCHECK."""
     return {"status": "ok"}
 
 
-@router.get("/readyz")
+@router.get("/readyz", summary="Readiness check, with each component's status")
 async def readyz(request: Request, response: Response) -> dict[str, Any]:
     registry: HealthRegistry = request.app.state.health
     overall, components = await registry.snapshot()
@@ -34,7 +34,7 @@ async def readyz(request: Request, response: Response) -> dict[str, Any]:
 
 
 # ADR-0015
-@router.get("/metrics", response_class=PlainTextResponse)
+@router.get("/metrics", response_class=PlainTextResponse, summary="Prometheus counters")
 async def metrics_text() -> PlainTextResponse:
     """Counters in the Prometheus text format, for a scraper on the LAN. No channel or user in it."""
     return PlainTextResponse(metrics.render(), media_type=metrics.CONTENT_TYPE)
