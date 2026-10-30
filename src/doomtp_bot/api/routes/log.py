@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from doomtp_bot.api import deps
 from doomtp_bot.api.access import (
@@ -64,7 +65,85 @@ _log_reader.public = True  # type: ignore[attr-defined]
 LOG_READ = Depends(_log_reader)
 
 
-@router.get("/channels/{login}/runs")
+class CommandRunRow(BaseModel):
+    user_id: str | None
+    trigger_type: str
+    expr: str
+    code: int
+    message: str | None
+    duration_ms: int
+    cancelled_reason: str | None
+    at: int = Field(description="ms since the epoch")
+
+
+class CommandRunList(BaseModel):
+    runs: list[CommandRunRow]
+
+
+class MessageSearch(BaseModel):
+    """Hits are message rows; their fields are listed in `/api/v2/channels/{login}/log`."""
+
+    query: str
+    messages: list[dict[str, Any]]
+
+
+class LogPage(BaseModel):
+    """`entries` are messages, notifications or moderation events, told apart by `kind`."""
+
+    channel_id: str
+    order: str
+    entries: list[dict[str, Any]]
+    next: str | None
+
+
+class LogSession(BaseModel):
+    started_at: int
+    ended_at: int | None
+    end_reason: str | None
+
+
+class BackfillRun(BaseModel):
+    model_config = ConfigDict(extra="allow")  # the stored run row, as it is
+    complete: bool
+    inserted: int
+    error: str | None
+
+
+class CoverageGap(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    from_: int = Field(serialization_alias="from", validation_alias="from")
+    to: int
+    reason: str
+    backfill: BackfillRun | None
+
+
+class LogCoverage(BaseModel):
+    since: int
+    until: int
+    sessions: list[LogSession]
+    gaps: list[CoverageGap]
+    complete: bool
+
+
+class AuditEntry(BaseModel):
+    model_config = ConfigDict(extra="allow")  # `before` and `after` are whatever the change stored
+    id: int
+    channel_id: str | None
+    actor_user_id: str | None
+    via: str
+    action: str
+    target: str | None
+    at: int = Field(description="ms since the epoch")
+    channel_login: str | None
+    actor_login: str | None
+
+
+class AuditPage(BaseModel):
+    entries: list[AuditEntry]
+    next: int | None
+
+
+@router.get("/channels/{login}/runs", response_model=CommandRunList, summary="A channel's recent command runs")
 async def command_runs(
     request: Request,
     login: str,
@@ -82,7 +161,7 @@ async def command_runs(
 
 
 # architecture §3.3
-@router.get("/channels/{login}/messages")
+@router.get("/channels/{login}/messages", response_model=MessageSearch, summary="Search a channel's chat log")
 async def search_messages(
     request: Request,
     login: str,
@@ -103,7 +182,7 @@ _KINDS_QUERY = Query(default=None, description="message, notification or moderat
 
 
 # ADR-0025, ADR-0026
-@router.get("/channels/{login}/log")
+@router.get("/channels/{login}/log", response_model=LogPage, summary="A channel's log as one timeline")
 async def channel_log(
     request: Request,
     login: str,
@@ -146,7 +225,9 @@ async def channel_log(
 
 
 # ADR-0025
-@router.get("/channels/{login}/log/coverage")
+@router.get(
+    "/channels/{login}/log/coverage", response_model=LogCoverage, summary="When the bot was listening, and the gaps"
+)
 async def channel_log_coverage(
     request: Request,
     login: str,
@@ -162,7 +243,7 @@ async def channel_log_coverage(
 
 
 # ADR-0026
-@router.get("/audit")
+@router.get("/audit", response_model=AuditPage, summary="The audit trail of changes")
 async def audit(
     request: Request,
     channel: str | None = Query(default=None, max_length=40),

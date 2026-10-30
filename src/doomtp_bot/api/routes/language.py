@@ -102,7 +102,7 @@ def _spans(node: Node) -> list[dict[str, Any]]:
 
 
 # ADR-0011
-@router.post("/parse")
+@router.post("/parse", summary="Parse a command expression")
 async def parse_expression(request: Request, body: ParseRequest) -> dict[str, Any]:
     """Parse text and return the AST or the first error, with its span."""
     runtime = _runtime(request)
@@ -122,7 +122,7 @@ async def parse_expression(request: Request, body: ParseRequest) -> dict[str, An
     }
 
 
-@router.post("/explain")
+@router.post("/explain", summary="Explain a command expression")
 async def explain_expression(request: Request, body: ExplainRequest) -> dict[str, Any]:
     """The full explain report (spec §9). `run` evaluates with writes and sends disabled."""
     runtime = _runtime(request)
@@ -154,7 +154,7 @@ async def chatter_for(request: Request, channel: Any, login: str, badges: frozen
 
 
 # ADR-0011
-@router.get("/language")
+@router.get("/language", summary="The language's syntax and rules")
 async def language(request: Request) -> dict[str, Any]:
     """Everything the editor needs for autocomplete and hover docs."""
     runtime = getattr(request.app.state, "runtime", None)
@@ -191,7 +191,7 @@ async def language(request: Request) -> dict[str, Any]:
 
 
 # architecture §4.2; the forms, ADR-0037
-@router.get("/commands")
+@router.get("/commands", summary="Built-in commands and their forms")
 async def commands(request: Request) -> dict[str, Any]:
     """Every built-in command with its usage, parameters and examples, then the language's forms (`ifelse`,
     `switch`, the operators): `kind` says which, and a form's `usage` is its syntax."""

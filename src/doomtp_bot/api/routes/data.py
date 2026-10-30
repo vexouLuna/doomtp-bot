@@ -101,6 +101,47 @@ def _channel_json(settings: ChannelSettings) -> dict[str, Any]:
     }
 
 
+class AutomodJson(BaseModel):
+    action: str
+    timeout_s: int
+
+
+class ChannelRolesJson(BaseModel):
+    channel_var_write: str
+    grant_min: str
+    publish_min: str
+    create_min: str
+    var_admin: str
+
+
+class ChannelJson(BaseModel):
+    """A channel and its settings. Times are in ms since the epoch."""
+
+    channel_id: str
+    login: str
+    active: bool
+    status: str
+    banned: bool
+    tier: str
+    capabilities: list[str]
+    prefix: str
+    timezone: str
+    bot_enabled: bool
+    slur_filter: str
+    log_enabled: bool
+    history_backfill: bool
+    public_log: bool
+    quiet_errors: bool
+    cc_edit_notice: bool
+    reply_hold_ms: int
+    automod: AutomodJson
+    roles: ChannelRolesJson
+
+
+class ChannelList(BaseModel):
+    channels: list[ChannelJson]
+
+
 class ChannelPatch(BaseModel):
     prefix: str | None = Field(default=None, max_length=16)
     quiet_errors: bool | None = None
@@ -132,13 +173,13 @@ class Enabled(BaseModel):
     enabled: bool
 
 
-@router.get("/channels")
+@router.get("/channels", response_model=ChannelList)
 async def list_channels(request: Request, caller: Caller = READ) -> dict[str, Any]:
     channels = [c for c in _policy(request).channels() if caller.manages(c.login)]
     return {"channels": [_channel_json(c) for c in sorted(channels, key=lambda c: c.login)]}
 
 
-@router.get("/channels/{login}")
+@router.get("/channels/{login}", response_model=ChannelJson)
 async def get_channel(request: Request, login: str, caller: Caller = READ) -> dict[str, Any]:
     return _channel_json(_channel(request, login))
 
@@ -185,7 +226,7 @@ async def join_own_channel(request: Request, caller: Caller = PERSONAL_WRITE) ->
     return {"login": login, "channel_id": caller.user_id, "failed_subscriptions": failed}
 
 
-@router.patch("/channels/{login}")
+@router.patch("/channels/{login}", response_model=ChannelJson)
 async def patch_channel(request: Request, login: str, body: ChannelPatch, caller: Caller = WRITE) -> dict[str, Any]:
     settings = _channel(request, login)
     policy = _policy(request)
@@ -452,7 +493,7 @@ def rule_json(policy: PolicyService, scope: str, spec: CommandSpec) -> dict[str,
     }
 
 
-@router.get("/channels/{login}/commands")
+@router.get("/channels/{login}/commands", summary="The commands a channel can run")
 async def channel_commands(request: Request, login: str) -> dict[str, Any]:
     """What this channel's chat can actually run, with the rules that apply here. Public, like the page."""
     settings = _channel(request, login)
@@ -588,7 +629,7 @@ def _custom_json(command: Any) -> dict[str, Any]:
 
 
 # ADR-0012
-@router.get("/custom-commands")
+@router.get("/custom-commands", summary="Shared custom commands")
 async def custom_commands(request: Request, owner: str | None = Query(default=None, max_length=40)) -> dict[str, Any]:
     """Public: what is published everywhere, or one owner's shared commands."""
     service: CustomCommandService = deps.customcmds(request)
@@ -603,7 +644,7 @@ async def custom_commands(request: Request, owner: str | None = Query(default=No
     return {"commands": [_custom_json(c) for c in owned if c.shareable]}
 
 
-@router.get("/channels/{login}/publications")
+@router.get("/channels/{login}/publications", summary="A channel's published commands")
 async def publications(request: Request, login: str) -> dict[str, Any]:
     """Public: the custom commands this channel offers, and who wrote them."""
     settings = _channel(request, login)

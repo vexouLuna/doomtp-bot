@@ -30,7 +30,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
-from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse
@@ -130,7 +130,7 @@ def mount(app: FastAPI, jobs: JobRuntime) -> None:
     v2.include_router(v2_users.users_router())
     schema = APIRouter()  # v2 alone, for its own OpenAPI
     schema.include_router(v2)
-    docs = APIRouter(prefix=PREFIX, dependencies=[Depends(personal)], include_in_schema=False)
+    docs = APIRouter(prefix=PREFIX, include_in_schema=False)  # public: it lists routes, and no data
 
     @docs.get("/openapi.json")
     async def openapi() -> dict[str, Any]:
