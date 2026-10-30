@@ -64,3 +64,8 @@ bot logs `signin.not_configured`.
    *(2026-09-29)*
 2. [ ] Register the `dtp` client in vexoulz-auth, set the settings and `SIGNIN_PROVIDER=vexoulz` on the
    server, after vexoulz-auth is deployed.
+
+## Update
+
+The bot calls vex-auth's `/v2` routes (snake_case fields, `application/problem+json` errors, a paged
+`items` / `next_cursor` for moderated channels) instead of the legacy `/v1`. The flow above is unchanged.

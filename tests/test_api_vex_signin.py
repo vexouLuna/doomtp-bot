@@ -13,7 +13,7 @@ from doomtp_bot.api.keys import ApiKeyService
 from doomtp_bot.api.sessions import SESSION_COOKIE
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.twitch.auth import OAuthError
-from doomtp_bot.twitch.signin import REFRESH_S, TokenRevoked, VexSignIn
+from doomtp_bot.twitch.signin import REFRESH_S, TokenRevoked, VexAuthHttp, VexSignIn
 from tests.test_api_data import (  # noqa: F401  (fixtures)
     CHANNEL_ID,
     CHANNEL_LOGIN,
@@ -41,7 +41,7 @@ class FakeVexHttp:
             raise OAuthError("vex-auth refused the code (400 invalid_grant)")
         self.redeemed.append((code, redirect_uri))
         user_id, login = USERS[code]
-        return {"user": {"id": user_id, "login": login}, "sid": f"sid-{code}", "expiresAt": "x"}
+        return {"user": {"id": user_id, "login": login}, "sid": f"sid-{code}", "expires_at": "2026-01-01T00:00:00Z"}
 
     async def session_active(self, sid: str) -> bool:
         if self.fail:
@@ -147,3 +147,46 @@ async def test_channels_follow_twitch_and_a_revoked_token_ends_the_session(
     http.revoked.add(MOD_ID)
     now[0] += REFRESH_S
     assert (await client.get("/api/v1/session")).json()["authenticated"] is False
+
+
+class ScriptedVexAuthHttp(VexAuthHttp):
+    """The real client over canned v2 answers: (status, body) per call, paths and params recorded."""
+
+    def __init__(self, *answers: tuple[int, dict[str, Any]]) -> None:
+        super().__init__("https://auth.example/", "dtp", "secret")
+        self.answers = list(answers)
+        self.calls: list[tuple[str, str, Any]] = []
+
+    async def _call(self, method: str, path: str, **kwargs: Any) -> tuple[int, dict[str, Any]]:
+        self.calls.append((method, path, kwargs.get("params") or kwargs.get("json")))
+        return self.answers.pop(0)
+
+
+async def test_vex_auth_http_speaks_v2() -> None:
+    http = ScriptedVexAuthHttp(
+        (200, {"user": {"id": "1"}, "sid": "s", "expires_at": "2026-01-01T00:00:00Z"}),
+        (200, {"active": True}),
+        (404, {"code": "not_found"}),
+        (200, {"items": ["a", "b"], "next_cursor": "c2"}),
+        (200, {"items": ["c"], "next_cursor": None}),
+    )
+    assert (await http.token("code", "https://x/cb"))["sid"] == "s"
+    assert await http.session_active("s") is True
+    assert await http.session_active("s") is False
+    assert await http.moderated_channels("1") == ["a", "b", "c"]
+    assert [c[1] for c in http.calls] == [
+        "/v2/token",
+        "/v2/sessions/s",
+        "/v2/sessions/s",
+        "/v2/users/1/moderated-channels",
+        "/v2/users/1/moderated-channels",
+    ]
+    assert http.calls[4][2] == {"cursor": "c2"}
+
+
+async def test_vex_auth_http_errors_read_the_problem_code() -> None:
+    with pytest.raises(OAuthError, match="invalid_grant"):
+        await ScriptedVexAuthHttp((400, {"code": "invalid_grant", "status": 400})).token("x", "y")
+    for status in (404, 409, 410):
+        with pytest.raises(TokenRevoked, match="scope_missing"):
+            await ScriptedVexAuthHttp((status, {"code": "scope_missing"})).moderated_channels("1")

@@ -268,13 +268,16 @@ class TwitchSignIn:
 # ── through vex-auth (ADR-0023) ─────────────────────────────────────────
 
 
+MAX_CHANNEL_PAGES = 20  # vex-auth sends one page today; the cap keeps a bad cursor from looping
+
+
 class VexHttp(Protocol):
     async def token(self, code: str, redirect_uri: str) -> dict[str, Any]:
-        """`POST /v1/token`: `{user: {id, login, ...}, sid, expiresAt}`. OAuthError if refused."""
+        """`POST /v2/token`: `{user: {id, login, ...}, sid, expires_at}`. OAuthError if refused."""
         ...
 
     async def session_active(self, sid: str) -> bool:
-        """`GET /v1/sessions/{sid}`: False once the user signed out (or the session ran out)."""
+        """`GET /v2/sessions/{sid}`: False once the user signed out (or the session ran out)."""
         ...
 
     async def moderated_channels(self, user_id: str) -> list[str]:
@@ -303,13 +306,13 @@ class VexAuthHttp:
             return resp.status, body
 
     async def token(self, code: str, redirect_uri: str) -> dict[str, Any]:
-        status, body = await self._call("POST", "/v1/token", json={"code": code, "redirect_uri": redirect_uri})
+        status, body = await self._call("POST", "/v2/token", json={"code": code, "redirect_uri": redirect_uri})
         if status != 200:
-            raise OAuthError(f"vex-auth refused the code ({status} {body.get('error')})")
+            raise OAuthError(f"vex-auth refused the code ({status} {body.get('code')})")
         return body
 
     async def session_active(self, sid: str) -> bool:
-        status, body = await self._call("GET", f"/v1/sessions/{sid}")
+        status, body = await self._call("GET", f"/v2/sessions/{sid}")
         if status == 404:
             return False
         if status != 200:
@@ -317,12 +320,20 @@ class VexAuthHttp:
         return bool(body.get("active"))
 
     async def moderated_channels(self, user_id: str) -> list[str]:
-        status, body = await self._call("GET", f"/v1/users/{user_id}/moderated-channels")
-        if status in (404, 409, 410):  # never signed in here, the scope is gone, or Twitch took it back
-            raise TokenRevoked(f"vex-auth has no usable token ({status} {body.get('error')})")
-        if status != 200:
-            raise OAuthError(f"vex-auth moderated-channels failed ({status})")
-        return [str(c) for c in body.get("channels", [])]
+        channels: list[str] = []
+        cursor: str | None = None
+        for _ in range(MAX_CHANNEL_PAGES):
+            params = {"cursor": cursor} if cursor else None
+            status, body = await self._call("GET", f"/v2/users/{user_id}/moderated-channels", params=params)
+            if status in (404, 409, 410):  # never signed in here, the scope is gone, or Twitch took it back
+                raise TokenRevoked(f"vex-auth has no usable token ({status} {body.get('code')})")
+            if status != 200:
+                raise OAuthError(f"vex-auth moderated-channels failed ({status})")
+            channels += [str(c) for c in body.get("items", [])]
+            cursor = body.get("next_cursor")
+            if not cursor:
+                break
+        return channels
 
 
 class VexSignIn(TwitchSignIn):
