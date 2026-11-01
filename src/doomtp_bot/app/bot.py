@@ -540,7 +540,6 @@ class Bot:
             return
         try:
             if await twitch.start() and twitch.bot_id and twitch.bot_login:
-                self.retry_in = 0.0
                 await self.channels.ensure_home(twitch.bot_id, twitch.bot_login)
                 try:
                     await self.channels.sync_logins(twitch.logins_by_id)  # renames while the bot was down
@@ -562,8 +561,12 @@ class Bot:
                     log.info("history.startup_backfill", channels=len(queued))
                 if not self.jobs.running:
                     await self.jobs.start()  # first queues again what the last stop cut short
-        except Exception:
+                self.retry_in = 0.0
+        except Exception as exc:
+            # Twitch unreachable mid-start left the bot deaf for a day with nobody trying again (2026-10-31).
             log.exception("twitch.start_failed")
+            twitch.last_error = repr(exc)
+            asyncio.create_task(self.restart_twitch(), name="twitch-restart")  # noqa: RUF006
 
     async def restart_twitch(self) -> None:
         """The client stopped by itself: EventSub gave up, or the token went bad. Start it again, waiting

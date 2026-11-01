@@ -521,6 +521,29 @@ async def test_a_client_that_stops_on_its_own_asks_to_be_started_again() -> None
     assert restarts == ["go", "go"]
 
 
+async def test_a_start_that_fails_at_login_leaves_no_half_started_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """2026-10-31: Twitch reset the login mid-restart, and the client left behind had no task and no
+    watchdog, so `health()` said ok while the bot heard nothing for a day."""
+    from doomtp_bot.twitch.client import _BotClient
+
+    stored = NS(user_id="999", login="doomtp_bot", access_token="a", refresh_token="r")
+
+    async def get(identity: str) -> Any:
+        return stored
+
+    async def login(self: Any) -> None:
+        raise ConnectionResetError("id.twitch.tv")
+
+    monkeypatch.setattr(_BotClient, "login", login)
+    service = TwitchService(client_id="x", client_secret="y", tokens=NS(get=get), sink=None)  # type: ignore[arg-type]
+    service.heard_at = 1234
+    with pytest.raises(ConnectionResetError):
+        await service.start()
+    assert service.client is None and service._task is None and service.heard_at == 1234
+    health = await service.health()
+    assert health.status.value == "degraded" and "ConnectionResetError" in health.detail["reason"]
+
+
 async def test_a_stored_token_for_another_account_is_refused_at_startup(dbs: Databases) -> None:
     """Changing TWITCH_BOT_ID must not leave the bot running as the account it used before."""
     tokens = TokenStore(dbs.bot)
