@@ -318,7 +318,7 @@ wheels = [
 
 [[package]]
 name = "doomtp-bot"
-version = "0.22.0"
+version = "0.22.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
