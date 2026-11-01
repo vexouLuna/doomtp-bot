@@ -255,6 +255,7 @@ class TwitchService:
     # ── lifecycle ───────────────────────────────────────────────────────────
     async def start(self) -> bool:
         """Start the client if a bot token exists. Returns False if the bot hasn't been authorized yet."""
+        self.refused = None
         stored = await self.tokens.get(BOT_IDENTITY)
         if stored is None or not stored.refresh_token:
             log.warning("twitch.not_authorized", hint="open /auth/login to authorize the bot account")
@@ -274,7 +275,6 @@ class TwitchService:
             )
             await self.stop()
             return False
-        self.refused = None
         await self.stop()
         self.bot_id, self.bot_login = stored.user_id, stored.login
         self.client = _BotClient(
@@ -284,8 +284,14 @@ class TwitchService:
         self._wanted.clear()
         self._channel_events.clear()
         self.deaf = None
-        self.heard_at = now_ms()
-        await self.client.login()
+        try:
+            await self.client.login()
+        except Exception as exc:
+            # A client with no task behind it would pass `health()` while hearing nothing (2026-10-31).
+            self.refused = f"the last start failed: {exc!r}"
+            await self.stop()
+            raise
+        self.heard_at = now_ms()  # not before: a failed start keeps where the log's gap began
         self._task = asyncio.create_task(self._run(self.client), name="twitch-client")
         self._watch = asyncio.create_task(self._watchdog(self.client), name="twitch-watchdog")
         log.info("twitch.started", bot=stored.login)
