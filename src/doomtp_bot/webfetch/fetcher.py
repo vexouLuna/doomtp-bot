@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import json
 import socket
 import time
 from collections.abc import Callable, Iterable
@@ -24,7 +23,7 @@ from yarl import URL
 
 from doomtp_bot import __version__
 from doomtp_bot.ratelimit import SlidingWindow
-from doomtp_bot.runtime.result import Code, ErrorCode
+from doomtp_bot.runtime.result import Code, ErrorCode, from_json
 from doomtp_bot.webfetch.addresses import is_ip_literal, matching_pattern, refused
 
 log = structlog.get_logger(__name__)
@@ -180,7 +179,7 @@ class HttpFetcher:
         self.per_channel = _Window(channel_per_minute, clock)
         self.per_host = _Window(host_per_minute, clock)
         self._cache: dict[str, tuple[float, Fetched]] = {}
-        self._inflight: dict[str, asyncio.Future[Fetched]] = {}
+        self._inflight: dict[str, asyncio.Task[Fetched]] = {}
 
     def check(self, url: URL) -> HostRule:
         """The allow-list entry for `url`, or E_HTTP_NOT_ALLOWED saying what's wrong with it."""
@@ -229,21 +228,21 @@ class HttpFetcher:
         self.per_channel.add(channel_id)
         self.per_host.add(host)
 
-        future: asyncio.Future[Fetched] = asyncio.get_running_loop().create_future()
-        self._inflight[key] = future
+        # A task of its own, so the first requester being cancelled (its stage timed out) doesn't cancel
+        # the fetch everyone else sharing it is waiting on.
+        task = asyncio.create_task(self._fetch_and_cache(key, url))
+        task.add_done_callback(lambda t: t.cancelled() or t.exception())  # retrieved, so it never warns
+        self._inflight[key] = task
+        return await asyncio.shield(task)
+
+    async def _fetch_and_cache(self, key: str, url: URL) -> Fetched:
         try:
             fetched = await self._fetch(url)
-        except BaseException as exc:
-            future.set_exception(exc)
-            future.exception()  # retrieved here, so a future nobody else awaited doesn't warn
-            raise
-        else:
-            future.set_result(fetched)
-            self._cache[key] = (self.clock() + self.cache_s, fetched)
-            self._prune()
-            return fetched
         finally:
             del self._inflight[key]
+        self._cache[key] = (self.clock() + self.cache_s, fetched)
+        self._prune()
+        return fetched
 
     def _prune(self) -> None:
         now = self.clock()
@@ -308,7 +307,7 @@ class HttpFetcher:
             if len(body) > self.max_bytes:
                 raise HttpError("E_HTTP_TOO_BIG", f"{host}'s answer is over {self.max_bytes // 1024} KB", host=host)
         try:
-            value = json.loads(body.decode(response.get_encoding() if response.charset else "utf-8"))
+            value = from_json(body.decode(response.get_encoding() if response.charset else "utf-8"))
         except (ValueError, LookupError):
             raise HttpError("E_HTTP_NOT_JSON", f"{host} didn't answer with JSON", host=host) from None
         return Fetched(value, host, response.status, len(body))

@@ -326,7 +326,11 @@ class ChatLogWriter:
 _SQL: dict[str, str] = {
     "user": (
         "INSERT INTO users (user_id, login, display_name, first_seen, last_seen) VALUES (%s, %s, %s, %s, %s)"
-        " ON CONFLICT (user_id) DO UPDATE SET login = EXCLUDED.login, display_name = EXCLUDED.display_name,"
+        # The newest message names the user: a backfilled older one must not bring back an old name.
+        " ON CONFLICT (user_id) DO UPDATE SET"
+        " login = CASE WHEN EXCLUDED.last_seen >= users.last_seen THEN EXCLUDED.login ELSE users.login END,"
+        " display_name = CASE WHEN EXCLUDED.last_seen >= users.last_seen"
+        " THEN EXCLUDED.display_name ELSE users.display_name END,"
         # GREATEST, not MAX: MAX takes two arguments in SQLite but is an aggregate in Postgres.
         " last_seen = GREATEST(users.last_seen, EXCLUDED.last_seen)"
     ),

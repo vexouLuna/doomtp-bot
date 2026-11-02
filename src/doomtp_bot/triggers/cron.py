@@ -103,10 +103,9 @@ def _field(name: str, part: str) -> frozenset[int]:
             if last < first:
                 raise CronError(f"{chunk!r} counts backwards")
         found.update(range(first, last + 1, step))
-    normalized = {v % 7 if name == "weekday" else v for v in found}
-    if any(not low <= v <= high for v in normalized):
+    if any(not low <= v <= high for v in found):  # a weekday 7 is already 0 (_value)
         raise CronError(f"{name} must be between {low} and {high}")
-    return frozenset(normalized)
+    return frozenset(found)
 
 
 def _step(text: str, chunk: str) -> int:

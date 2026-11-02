@@ -48,6 +48,8 @@ async def test_convert_ok(raw: str, type_name: str, expected: object) -> None:
         ("9-1", "range"),
         ("", "duration"),
         ("ftp://x", "url"),
+        ("[NaN]", "list"),  # json.loads takes these; nothing after it can format them, nor jsonb store them
+        ('{"a": Infinity}', "map"),
     ],
 )
 async def test_convert_errors(raw: str, type_name: str) -> None:

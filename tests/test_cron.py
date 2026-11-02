@@ -50,7 +50,18 @@ def test_day_of_month_and_weekday_together_match_either(schedule: str = "0 0 13 
 
 @pytest.mark.parametrize(
     "schedule",
-    ["", "0 18 * *", "0 18 * * * *", "60 * * * *", "* 25 * * *", "0 0 * * xyz", "0 0 32 * *", "*/0 * * * *"],
+    [
+        "",
+        "0 18 * *",
+        "0 18 * * * *",
+        "60 * * * *",
+        "* 25 * * *",
+        "0 0 * * xyz",
+        "0 0 32 * *",
+        "*/0 * * * *",
+        "0 18 * * 8",
+        "0 18 * * 1-9",
+    ],
 )
 def test_impossible_schedules_are_refused(schedule: str) -> None:
     with pytest.raises(CronError):

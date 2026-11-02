@@ -344,8 +344,9 @@ class Executor:
                         result = await resolved.handler(cmd_ctx, args, stdin)
                 # 100–1023 are runtime-reserved (spec §6.2); commands must not *return* them. A handler can
                 # still raise CommandError for a code the runtime owns: 126/128, or an E_* error. A body's
-                # E_* error came from the runtime itself, so it reaches the caller unchanged (ADR-0018).
-                from_body = resolved.custom is not None and result.code in ERROR_CODES
+                # E_* error or cooldown came from the runtime itself, so it reaches the caller unchanged
+                # (ADR-0018, spec §6.3); a refusal inside a body is a reply, "that takes <role> rank" (ADR-0033).
+                from_body = resolved.custom is not None and (result.code in ERROR_CODES or result.code == Code.COOLDOWN)
                 if result.code >= 100 and not from_body:
                     log.warning("command.reserved_code", command=spec.name, code=result.code)
                     result = Result(Code.FAIL, result.message, result.data)

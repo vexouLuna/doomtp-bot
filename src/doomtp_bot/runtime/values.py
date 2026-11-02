@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import math
 import re
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any, Final
 from urllib.parse import urlsplit
 
-from doomtp_bot.runtime.result import Result, Value, to_json
+from doomtp_bot.runtime.result import Result, Value, from_json, to_json
 
 
 class _Missing:
@@ -209,7 +208,7 @@ async def convert(
         if isinstance(value, kind):  # a single placeholder's list or map passes through untouched
             return value
         try:
-            converted = json.loads(text)
+            converted = from_json(text)
         except ValueError:
             converted = None
         if not isinstance(converted, kind):

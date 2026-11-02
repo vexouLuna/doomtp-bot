@@ -7,14 +7,17 @@ import random
 
 import pytest
 
+from doomtp_bot.customcmds.resolution import SystemResolver
+from doomtp_bot.customcmds.system import Derived
 from doomtp_bot.lang.parser import Context
 from doomtp_bot.runtime.context import Publisher
+from doomtp_bot.runtime.engine import Runtime
 from doomtp_bot.runtime.executor import ScopeArgs
 from doomtp_bot.runtime.policy import AllowAllPolicy, Decision
 from doomtp_bot.runtime.result import Code, ErrorCode, Result
 from doomtp_bot.runtime.spec import CommandSpec
 from doomtp_bot.runtime.variables import DEFAULT_LIST_ITEMS, InMemoryVariableStore, VarKey
-from tests.runtime.helpers import ALICE, CHANNEL, EMOJI_SIGNS, make_runtime, run
+from tests.runtime.helpers import ALICE, CHANNEL, EMOJI_SIGNS, make_runtime, registry, run, with_core
 
 
 # ── Appendix A.2 ───────────────────────────────────────────────────────────
@@ -572,3 +575,11 @@ async def test_result_takes_the_piped_message_without_one_of_its_own() -> None:
 async def test_result_refuses_a_message_key_and_a_word_without_a_key() -> None:
     for line in ("!result message=hi", "!result n=1 oops"):
         assert (await run(make_runtime(), line)).result.code == Code.USAGE
+
+
+async def test_a_cooldown_inside_a_body_stays_a_cooldown() -> None:
+    """A body ending in a command on cooldown is that cooldown, not a FAIL with "on cooldown" in chat."""
+    reg = registry()
+    resolver = SystemResolver.from_derived(with_core(reg), "t", (Derived(name="pinger", summary="", body="ping"),))
+    r = await run(Runtime(reg, resolver=resolver, policy=DenyAdd()), "!pinger")
+    assert (r.result.code, r.send, r.callback) == (Code.COOLDOWN, None, "on_cooldown")

@@ -131,3 +131,24 @@ async def test_the_event_json_reaches_the_sink_as_twitch_sent_it(subscription_ty
     assert isinstance(event, ChatNotification)
     assert event.raw_event == recorded["payload"]["event"]
     assert client_module._RAW_EVENT.get() is None  # nothing is left behind for the next notification
+
+
+@pytest.mark.parametrize("subscription_type", ["channel.follow", "channel.cheer"])
+async def test_a_redelivered_follow_or_cheer_reaches_the_sink_once(subscription_type: str) -> None:
+    """EventSub is at-least-once. Follows and cheers have no message id of Twitch's, so they dedupe on
+    the id the mapping builds; otherwise their triggers thank the same chatter twice."""
+    received: list[Event] = []
+
+    async def sink(event: Event) -> None:
+        received.append(event)
+
+    service = TwitchService(client_id="c", client_secret="s", tokens=None, sink=sink)  # type: ignore[arg-type]
+    client = _BotClient(service, client_id="c", client_secret="s", bot_id="80730642")
+    handler = client.event_follow if subscription_type == "channel.follow" else client.event_cheer
+    try:
+        for _ in range(2):
+            await handler(parsed(subscription_type))
+    finally:
+        await client.close(save_tokens=False)
+
+    assert len(received) == 1

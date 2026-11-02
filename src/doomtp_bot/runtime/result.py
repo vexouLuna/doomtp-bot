@@ -6,6 +6,7 @@ import enum
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 # JSON-like data. Covariant containers so list[str] / dict[str, bool] are accepted; runtime values are list/dict.
 type Value = None | bool | int | float | str | Sequence[Value] | Mapping[str, Value]
@@ -17,6 +18,16 @@ MAX_MESSAGE_CHARS = 2000
 def to_json(value: object) -> str:
     """Compact JSON used for every stored or size-checked value."""
     return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+
+
+def from_json(text: str) -> Any:
+    """`json.loads`, refusing NaN and Infinity: they aren't JSON, nothing downstream can format them and
+    jsonb won't store them. A ValueError, like any other text that isn't JSON."""
+    return json.loads(text, parse_constant=_no_constant)
+
+
+def _no_constant(name: str) -> Any:
+    raise ValueError(f"{name} is not JSON")
 
 
 def json_size(value: object) -> int:

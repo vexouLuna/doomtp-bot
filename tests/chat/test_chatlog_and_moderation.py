@@ -65,6 +65,14 @@ async def test_users_are_keyed_by_id_and_renames_are_kept(dbs: Databases) -> Non
     assert await rows(dbs, "SELECT login FROM user_names ORDER BY seen_from") == [("alice",), ("alice_2026",)]
 
 
+async def test_a_backfilled_old_message_keeps_the_current_name(dbs: Databases) -> None:
+    writer = ChatLogWriter(dbs.chatlog)
+    await writer.message(msg("m2", login="alice_2026", at=2000))
+    await writer.message(msg("m1", login="alice", at=1000))  # backfill, written after the live one
+    await writer.stop()
+    assert await rows(dbs, "SELECT login, display_name, last_seen FROM users") == [("alice_2026", "Alice_2026", 2000)]
+
+
 async def test_moderation_flags_never_delete_rows(dbs: Databases) -> None:
     writer = ChatLogWriter(dbs.chatlog)
     await writer.message(msg("m1", user="u1", at=1000))
