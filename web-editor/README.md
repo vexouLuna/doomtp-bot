@@ -31,7 +31,8 @@ stands, so `npm run build` is part of changing anything here, and its output goe
 It upgrades the `<textarea>` it wraps and keeps it in sync, so the page still works without JavaScript
 and an ordinary form post still carries the same field. `context` is the parse context (`line`, `body`,
 `trigger`, `listener`, `callback`), `channel` supplies that channel's prefix and visible commands to the
-server, and `explain` adds the report under the editor.
+server, and `explain` adds the report under the editor: the parse error or a missing sign as you type, and
+the Explain button runs the line (writes discarded, nothing sent) to show what it would say.
 
 The lexer is also published on its own, as an ES module at `/static/editor/tokens.js`, for a site on the
 same origin that wants the editor's colours without the editor (doomtp-web colours every command it shows
