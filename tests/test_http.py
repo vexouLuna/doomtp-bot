@@ -95,6 +95,8 @@ async def site() -> AsyncIterator[Web]:
             return web.json_response({"current": {"temp_c": 12}, "list": [{"name": "a"}, {"name": "b"}]})
         if path == "/big":
             return web.json_response({"x": "y" * 200_000})
+        if path == "/nan":
+            return web.Response(text='{"x": NaN}', content_type="application/json")
         if path == "/text":
             return web.Response(text="hello")
         if path == "/fail":
@@ -252,6 +254,7 @@ async def test_failures_have_their_own_codes(site: Web) -> None:
     f = fetcher(site, timeout_s=0.3)
     await fails(f, f"http://api.test:{site.port}/big", "E_HTTP_TOO_BIG")
     await fails(f, f"http://api.test:{site.port}/text", "E_HTTP_NOT_JSON")
+    await fails(f, f"http://api.test:{site.port}/nan", "E_HTTP_NOT_JSON")  # NaN isn't JSON, nor jsonb
     status = await fails(f, f"http://api.test:{site.port}/fail", "E_HTTP_STATUS")
     assert status.data["status"] == 503
     await fails(f, f"http://api.test:{site.port}/slow", "E_HTTP_TIMEOUT")

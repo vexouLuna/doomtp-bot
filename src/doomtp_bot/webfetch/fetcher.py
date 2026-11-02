@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import json
 import socket
 import time
 from collections.abc import Callable, Iterable
@@ -24,7 +23,7 @@ from yarl import URL
 
 from doomtp_bot import __version__
 from doomtp_bot.ratelimit import SlidingWindow
-from doomtp_bot.runtime.result import Code, ErrorCode
+from doomtp_bot.runtime.result import Code, ErrorCode, from_json
 from doomtp_bot.webfetch.addresses import is_ip_literal, matching_pattern, refused
 
 log = structlog.get_logger(__name__)
@@ -308,7 +307,7 @@ class HttpFetcher:
             if len(body) > self.max_bytes:
                 raise HttpError("E_HTTP_TOO_BIG", f"{host}'s answer is over {self.max_bytes // 1024} KB", host=host)
         try:
-            value = json.loads(body.decode(response.get_encoding() if response.charset else "utf-8"))
+            value = from_json(body.decode(response.get_encoding() if response.charset else "utf-8"))
         except (ValueError, LookupError):
             raise HttpError("E_HTTP_NOT_JSON", f"{host} didn't answer with JSON", host=host) from None
         return Fetched(value, host, response.status, len(body))
