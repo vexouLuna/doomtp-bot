@@ -69,5 +69,6 @@ export const CHROME_CSS = `
   border: 1px solid ${v("--dtb-line")};
   border-radius: ${v("--dtb-radius")};
 }
+:where(dtb-editor .dtb-report-error) { color: ${v("--dtb-bad")}; border-color: ${v("--dtb-bad")}; }
 :where(dtb-editor .dtb-report[hidden]) { display: none; }
 `;
