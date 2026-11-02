@@ -562,6 +562,7 @@ class Bot:
                 if not self.jobs.running:
                     await self.jobs.start()  # first queues again what the last stop cut short
                 self.retry_in = 0.0
+                self.down_since = self.restart_cause = None  # announced; a later start (re-authorizing) is no outage
         except Exception as exc:
             # Twitch unreachable mid-start left the bot deaf for a day with nobody trying again (2026-10-31).
             log.exception("twitch.start_failed")

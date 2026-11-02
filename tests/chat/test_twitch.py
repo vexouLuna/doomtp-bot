@@ -674,3 +674,48 @@ async def test_the_watchdog_lets_a_quick_reconnect_finish() -> None:
     await asyncio.sleep(0.1)
     assert restarts == [] and service.deaf is None
     watch.cancel()
+
+
+async def test_starting_again_clears_the_outage_it_announced() -> None:
+    """A re-authorization re-runs start_twitch; the next start must not repeat a stale outage."""
+    from doomtp_bot.app.bot import Bot
+
+    announced: list[tuple[int | None, str | None]] = []
+
+    async def noop(*_a: Any, **_k: Any) -> Any:
+        return []
+
+    async def online(_run: Any, *, down_since_ms: int | None, cause: str | None) -> None:
+        announced.append((down_since_ms, cause))
+
+    twitch = NS(start=lambda: _true(), bot_id="1", bot_login="bot", logins_by_id={})
+    bot = NS(
+        twitch=twitch,
+        channels=NS(ensure_home=noop, sync_logins=noop, subscribe_all=noop),
+        dbs=NS(chatlog=None),
+        bot_badges=NS(load=lambda _b: None),
+        probe=NS(probe_all=noop, start=lambda: None),
+        restore_broadcasters=noop,
+        bot_events=NS(online=online),
+        last_run=None,
+        down_since=123,
+        restart_cause="boom",
+        poller=None,
+        backfill_queue=NS(queue_startup=noop),
+        jobs=NS(running=True),
+        retry_in=4.0,
+    )
+    import doomtp_bot.app.bot as bot_module
+
+    original = bot_module.latest_badges
+    bot_module.latest_badges = noop  # type: ignore[assignment]
+    try:
+        await Bot.start_twitch(bot)  # type: ignore[arg-type]
+        await Bot.start_twitch(bot)  # type: ignore[arg-type]
+    finally:
+        bot_module.latest_badges = original
+    assert announced == [(123, "boom"), (None, None)]
+
+
+async def _true() -> bool:
+    return True
