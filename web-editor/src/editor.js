@@ -49,6 +49,7 @@ class DoomtpEditor extends HTMLElement {
     this.report = document.createElement("div");
     this.report.className = "dtb-report";
     this.report.hidden = true;
+    this.report.setAttribute("aria-live", "polite");
     this.appendChild(this.report);
     if (this.textarea) this.textarea.hidden = true;
 
@@ -99,14 +100,25 @@ class DoomtpEditor extends HTMLElement {
     } catch {
       return []; // the bot is restarting, or the LAN blinked: colours stay, diagnostics wait
     }
+    if (answer.not_a_command) {
+      // The most common slip: chat takes a line without the sign as an ordinary message, so say so.
+      const sign = this.options.prefix ? ` ${this.options.prefix}` : "";
+      this.problem = `Not a command: chat reads this as an ordinary message. A command starts with the sign${sign}.`;
+      this.note(this.problem);
+      return [];
+    }
     if (answer.ok) {
+      this.problem = null;
       this.show(null);
       if (this.hasAttribute("explain") && text.length <= EXPLAIN_MAX_CHARS) this.explain();
       return [];
     }
     const error = answer.error || {};
     const from = Math.min(error.offset ?? 0, Math.max(text.length - 1, 0));
-    this.show(null);
+    // Under the line as well as on the gutter dot, which only shows its message on hover.
+    const hint = error.hint && !error.message?.includes(error.hint) ? `\n${error.hint}` : "";
+    this.problem = `${error.message}${hint}`;
+    this.note(this.problem);
     return [
       {
         from,
@@ -123,19 +135,20 @@ class DoomtpEditor extends HTMLElement {
     button.type = "button";
     button.textContent = "Explain";
     button.className = "dtb-explain";
-    button.addEventListener("click", () => this.explain());
+    // The button also runs the line, writes discarded and nothing sent, for what it would say (spec §9).
+    button.addEventListener("click", () => this.explain(true));
     this.appendChild(button);
   }
 
-  /** The same report `!explain` prints, without running anything (spec §9). */
-  async explain() {
+  /** The same report `!explain` prints; with `run`, as `!explain --run` (spec §9). */
+  async explain(run = false) {
     const text = this.value;
     if (!text.trim()) return;
     this.pending?.abort();
     this.pending = new AbortController();
     try {
       const report = await api.explain(
-        { text, context: this.options.context, channel: this.options.channel },
+        { text, context: this.options.context, channel: this.options.channel, run },
         this.pending.signal,
       );
       this.show(report);
@@ -144,8 +157,20 @@ class DoomtpEditor extends HTMLElement {
     }
   }
 
+  /** A problem in place of the report: a parse error, or a line that isn't a command. */
+  note(text) {
+    this.report.classList.add("dtb-report-error");
+    this.report.textContent = text;
+    this.report.hidden = false;
+  }
+
   show(report) {
-    if (!report || report.parse_error) {
+    if (report?.parse_error) {
+      this.note(this.problem || report.parse_error);
+      return;
+    }
+    this.report.classList.remove("dtb-report-error");
+    if (!report) {
       this.report.hidden = true;
       this.report.textContent = "";
       return;
@@ -159,8 +184,12 @@ class DoomtpEditor extends HTMLElement {
       const how = store.append ? "appends to" : "stores in";
       lines.push(`${how} ${store.variable}${store.allowed ? "" : " — not allowed here"}`);
     }
-    if (report.failure) lines.push(`stops at ${report.failed_index}: ${report.failure.message}`);
-    if (report.would_send) lines.push(`sends: ${report.would_send}`);
+    if (report.failure) {
+      const at = report.failed_index ? ` at ${report.failed_index}` : ""; // a store's own check has no command index
+      lines.push(`stops${at}: ${report.failure.message}`);
+    }
+    if (report.ran) lines.push(`sends: ${report.would_send || "(nothing)"}`);
+    else if (!report.failure && this.hasAttribute("explain")) lines.push("Explain runs it to show what it would say.");
     this.report.textContent = lines.join("\n");
     this.report.hidden = lines.length === 0;
   }
