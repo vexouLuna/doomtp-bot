@@ -41,6 +41,11 @@ describe("the lexer", () => {
     expect(classes("echo a | b")).toBe("command:echo word:a operator:| command:b");
   });
 
+  it("reads a backslash at the very end as a word, not an escape", () => {
+    expect(classes("echo a\\")).toBe("command:echo word:a word:\\");
+    expect(classes("echo {!random 1\\")).toBe("command:echo ph.open:{ ph.op:! command:random word:1 word:\\");
+  });
+
   it("keeps quotes, escapes and the words they are glued to apart", () => {
     expect(classes('echo ab"c d"e')).toBe('command:echo word:ab string:"c d" word:e');
     expect(classes("echo \\| literal")).toBe("command:echo escape:\\| word:literal");
