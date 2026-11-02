@@ -201,13 +201,15 @@ class _BotClient(twitchio.Client):
         await self.service.emit(f"user_clear:{event.channel_id}:{event.target_user_id}:{event.at}", _with_raw(event))
 
     async def event_follow(self, payload: Any) -> None:
-        await self.service.emit(None, _with_raw(mapping.follow(payload)))
+        event = mapping.follow(payload)
+        await self.service.emit(event.id, _with_raw(event))  # no Twitch id: the mapped one dedupes
 
     async def event_custom_redemption_add(self, payload: Any) -> None:
         await self.service.emit(payload.id, _with_raw(mapping.redemption(payload)))
 
     async def event_cheer(self, payload: Any) -> None:
-        await self.service.emit(None, _with_raw(mapping.cheer(payload)))
+        event = mapping.cheer(payload)
+        await self.service.emit(event.id, _with_raw(event))  # no Twitch id: the mapped one dedupes
 
 
 class TwitchService:

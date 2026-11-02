@@ -100,3 +100,9 @@ def test_the_bot_refuses_to_start_when_forwarding_undoes_the_password_networks(
         __main__.main()
     assert exited.value.code == 1
     assert not (tmp_path / ".lock").exists()  # refused before taking the instance lock
+
+
+def test_an_ipv6_host_keeps_its_brackets_when_the_password_is_spliced_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://bot@[::1]:5432/db")
+    monkeypatch.setenv("DATABASE_PASSWORD", "pw")
+    assert settings().database_dsn() == "postgresql://bot:pw@[::1]:5432/db"

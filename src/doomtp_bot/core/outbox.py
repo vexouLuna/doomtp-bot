@@ -247,4 +247,5 @@ class Outbox:
                 twitch_message_id=None,
                 dropped_reason=reason,
                 filter_hits=hits,
+                run_ref=run_ref,
             )

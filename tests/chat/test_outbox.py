@@ -150,3 +150,10 @@ async def test_switching_the_bot_off_stops_a_message_waiting_for_the_rate_limit(
     results = await outbox.send("c1", "second")
     assert [r.dropped_reason for r in results] == ["bot_off"]
     assert [s[1] for s in sender.sent] == ["first"]
+
+
+async def test_a_dropped_line_keeps_the_run_it_came_from() -> None:
+    sender, out_log, t = FakeSender(), FakeLog(), FakeTime()
+    outbox = Outbox(sender, out_log, clock=t.clock, sleep=t.sleep, enabled_for=lambda c: False)
+    await outbox.send("off", "hello", run_ref="run-1")
+    assert out_log.rows[0]["dropped_reason"] == "bot_off" and out_log.rows[0]["run_ref"] == "run-1"

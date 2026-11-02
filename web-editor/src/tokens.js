@@ -140,6 +140,7 @@ function argument(text, i, push, store, inSubst = false) {
       i = placeholder(text, i, (t, s, e) => parts.push([t, s, e]), 1);
     } else {
       const from = i;
+      i += 1; // always advance: a lone `\` at the very end lands here and is just text
       while (i < text.length && !ends(i) && !'"{\\'.includes(text[i])) i += 1;
       parts.push(["word", from, i]);
     }
