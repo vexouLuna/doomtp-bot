@@ -99,6 +99,9 @@ async def site() -> AsyncIterator[Web]:
             return web.Response(text="hello")
         if path == "/fail":
             return web.json_response({"error": "nope"}, status=503)
+        if path == "/pause":
+            await asyncio.sleep(0.2)
+            return web.json_response({"ok": True})
         if path == "/slow":
             await asyncio.sleep(2)
             return web.json_response({})
@@ -273,6 +276,20 @@ async def test_identical_gets_share_one_response(site: Web) -> None:
     now[0] = 61.0
     await f.get("c1", url)
     assert site.hits == ["/json", "/json"]
+
+
+async def test_a_sharer_outlives_the_first_requester_being_cancelled(site: Web) -> None:
+    """The first run's stage timing out mustn't cancel the fetch every other run is waiting on."""
+    f = fetcher(site)
+    url = f"http://api.test:{site.port}/pause"
+    first = asyncio.create_task(f.get("c1", url))
+    await asyncio.sleep(0.05)
+    second = asyncio.create_task(f.get("c2", url))
+    await asyncio.sleep(0.05)
+    first.cancel()
+    assert (await second).value == {"ok": True} and site.hits == ["/pause"]
+    with pytest.raises(asyncio.CancelledError):
+        await first
 
 
 async def test_rate_limits(site: Web) -> None:
