@@ -836,7 +836,8 @@ async def channel_grants(request: Request, login: str, caller: Caller = PERSONAL
     offered: dict[str, CustomCommand] = {}
     for scope in (GLOBAL, settings.channel_id):  # the channel's own win, as at run time
         for publication, command in await service.publications_in(scope):
-            offered[publication.name] = command
+            if publication.status == "active" and command.status == "active":  # what runs, as publication()
+                offered[publication.name] = command
     for _, pack in await packs.publications_in(settings.channel_id, include_global=True):
         for member in await packs.members(pack.id):
             offered.setdefault(member.name, member)

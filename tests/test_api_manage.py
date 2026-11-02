@@ -13,6 +13,7 @@ import pytest
 from doomtp_bot.api.keys import ApiKeyService
 from doomtp_bot.api.sessions import SESSION_COOKIE
 from doomtp_bot.policy.repository import Actor
+from doomtp_bot.scopes import GLOBAL
 from tests.test_api_data import (  # noqa: F401  (fixtures)
     CHANNEL_ID,
     CHANNEL_LOGIN,
@@ -231,6 +232,20 @@ async def test_a_published_command_waits_for_its_write_grant(client: httpx.Async
 
     as_user(client, app)
     assert (await client.get(f"{OWN}/grants")).status_code == 403
+
+
+async def test_a_disabled_channel_publication_does_not_hide_the_global_one(client: httpx.AsyncClient, app: Any) -> None:
+    """The grants page lists what runs here: a disabled channel publication doesn't, the global one does."""
+    csrf = as_mod(client, app)
+    await _command(client, csrf, "deaths", "echo 1 -> channel.deaths")
+    await _command(client, csrf, "local", "echo 1 -> channel.other")
+    service = app.state.customcmds
+    deaths, local = await service.by_owner("300", "deaths"), await service.by_owner("300", "local")
+    await service.publish(channel_id=GLOBAL, name="deaths", command=deaths, published_by="300")
+    await service.publish(channel_id=CHANNEL_ID, name="deaths", command=local, published_by="300")
+    await service.set_publication_status(channel_id=CHANNEL_ID, name="deaths", status="disabled", actor_user_id="300")
+    grants = (await client.get(f"{OWN}/grants")).json()["grants"]
+    assert [(g["name"], g["writes"]) for g in grants] == [("deaths", ["channel.deaths"])]
 
 
 # ── roles, replies, readouts, variables ─────────────────────────────────────
