@@ -104,6 +104,8 @@ class Settings(BaseSettings):
             return self.database_url
         userinfo = quote(parts.username or "", safe="") + ":" + quote(password, safe="")
         host = parts.hostname or ""
+        if ":" in host:  # urlsplit strips the brackets of an IPv6 literal
+            host = f"[{host}]"
         if parts.port:
             host = f"{host}:{parts.port}"
         return urlunsplit(parts._replace(netloc=f"{userinfo}@{host}"))
