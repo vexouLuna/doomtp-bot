@@ -15,9 +15,10 @@ shares one connection. A pool belongs with the second process (ADR-0014), not he
 A statement sent on that shared connection while another task holds its lock runs inside that task's
 open transaction: it sees the uncommitted rows, and is rolled back with them. Each schema therefore
 has a second autocommit connection, `outside(conn)`, that no transaction ever holds (C99). The shared
-connection sends every statement there itself unless the task sending it is inside its own
-`transaction()` (`SharedConnection`), so a read sees only committed rows and a write outside a
-transaction commits on its own, whoever else is mid-transaction.
+connection sends a read there itself unless the task sending it is inside its own `transaction()`
+(`SharedConnection`), so a read sees only committed rows, whoever else is mid-transaction. A write
+always stays on the shared connection, outside a transaction too: it can't commit past a transaction
+that holds the rows it touches, so nothing waits on a lock another task holds.
 """
 
 from __future__ import annotations
@@ -94,18 +95,28 @@ def outside(conn: Connection) -> Connection:
     return _OUTSIDE.get(conn, conn)
 
 
-class SharedConnection(psycopg.AsyncConnection[dict[str, Any]]):
-    """The connection every writer shares. A statement from a task that isn't inside this connection's
-    `transaction()` goes to `outside(self)` instead, so it can't land in another task's open one.
+#: A statement that only reads: SELECT or WITH, naming no write. A false "no" keeps it where it was.
+_READ = re.compile(r"\s*(SELECT|WITH)\b(?!.*\b(INSERT|UPDATE|DELETE|MERGE)\b)", re.IGNORECASE | re.DOTALL)
 
-    `execute()` and the `fetch_*` helpers all open their cursor here, so this one method routes them.
+
+class SharedConnection(psycopg.AsyncConnection[dict[str, Any]]):
+    """The connection every writer shares. A read from a task that isn't inside this connection's
+    `transaction()` goes to `outside(self)` instead, so it can't see another task's open one. Writes
+    stay here.
+
+    The `fetch_*` helpers and `execute()` below all go through this method, so it routes them.
     """
 
-    def cursor(self, *args: Any, **kwargs: Any) -> Any:
+    async def execute(self, query: Any, *args: Any, **kwargs: Any) -> Any:
         other = _OUTSIDE.get(self)
-        if other is not None and not any(held is self for held in _HOLDING.get()):
-            return other.cursor(*args, **kwargs)
-        return super().cursor(*args, **kwargs)
+        if (
+            other is not None
+            and isinstance(query, str)
+            and _READ.match(query)
+            and not any(held is self for held in _HOLDING.get())
+        ):
+            return await other.execute(query, *args, **kwargs)
+        return await super().execute(query, *args, **kwargs)
 
 
 @asynccontextmanager
@@ -124,14 +135,12 @@ async def transaction(conn: Connection) -> AsyncIterator[Connection]:
 
 
 async def fetch_all(conn: Connection, sql: str, params: Params = ()) -> list[Row]:
-    async with conn.cursor() as cur:
-        await cur.execute(sql, params)
+    async with await conn.execute(sql, params) as cur:
         return await cur.fetchall()
 
 
 async def fetch_one(conn: Connection, sql: str, params: Params = ()) -> Row | None:
-    async with conn.cursor() as cur:
-        await cur.execute(sql, params)
+    async with await conn.execute(sql, params) as cur:
         return await cur.fetchone()
 
 
@@ -143,8 +152,7 @@ async def fetch_value(conn: Connection, sql: str, params: Params = ()) -> Any:
 
 async def execute(conn: Connection, sql: str, params: Params = ()) -> int:
     """Run a statement and return the number of rows it touched."""
-    async with conn.cursor() as cur:
-        await cur.execute(sql, params)
+    async with await conn.execute(sql, params) as cur:
         return cur.rowcount
 
 
