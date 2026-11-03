@@ -119,3 +119,36 @@ async def test_the_outside_connection_never_joins_another_tasks_transaction(data
                 raise RuntimeError("roll back")
     finally:
         await databases.close()
+
+
+async def test_the_shared_connection_routes_what_other_tasks_send_outside(database_url: str) -> None:
+    """A task inside transaction() sees its own rows; every other task, the services included, only sees
+    what is committed, and its write outside a transaction isn't rolled back with someone else's."""
+    databases = await Databases.open(database_url)
+    count = "SELECT count(*) FROM global_admins WHERE user_id LIKE 'route%%'"
+    insert = "INSERT INTO global_admins (user_id, user_login, granted_by, granted_at) VALUES (%s, 'x', 'system', 0)"
+    inside, done = asyncio.Event(), asyncio.Event()
+
+    async def writer() -> None:
+        with pytest.raises(RuntimeError):
+            async with transaction(databases.bot):
+                await execute(databases.bot, insert, ("route-a",))
+                assert await fetch_value(databases.bot, count) == 1  # its own row
+                child = asyncio.create_task(fetch_value(databases.bot, count))  # started inside: inside too
+                assert await child == 1
+                inside.set()
+                await done.wait()
+                raise RuntimeError("roll back")
+
+    async def other() -> None:
+        await inside.wait()
+        assert await fetch_value(databases.bot, count) == 0  # not committed: not visible
+        await execute(databases.bot, insert, ("route-b",))  # commits on its own
+        done.set()
+
+    try:
+        await asyncio.gather(writer(), other())
+        assert await fetch_value(databases.bot, count) == 1  # route-b survived the rollback
+    finally:
+        await execute(databases.bot, "DELETE FROM global_admins WHERE user_id LIKE 'route%%'")
+        await databases.close()

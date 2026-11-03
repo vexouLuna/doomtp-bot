@@ -129,6 +129,10 @@ async def test_without_twitch_the_bot_serves_its_api_and_shuts_down_cleanly(
     async with await dbs.chatlog.execute("SELECT ended_at FROM bot_runs") as cur:
         runs = await cur.fetchall()
     assert len(runs) == 1 and runs[0]["ended_at"] is not None
+    for _ in range(50):  # a closed backend leaves pg_stat_activity a moment after the client lets go
+        if connections(dsn) == before:
+            break
+        await asyncio.sleep(0.1)
     assert connections(dsn) == before
 
 
