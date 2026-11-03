@@ -145,6 +145,10 @@ async def test_packs_are_built_shared_and_published(client: httpx.AsyncClient, a
     assert [(p["name"], p["owner"], p["scope"]) for p in public] == [("kit", "friend", "channel")]
     # The public list marks the helper, which only the pack's own commands can call.
     assert {c["name"]: c["internal"] for c in public[0]["commands"]} == {"wave": False, "helper": True}
+    # Unsharing stops a new publication, not taking the one already here down.
+    unshared = await client.patch("/api/v1/me/packs/kit", json={"shareable": False}, headers=as_user(client, app))
+    assert unshared.status_code == 200
+    csrf = as_mod(client, app)
     assert (await client.delete(f"{OWN}/packs/kit?owner=friend", headers=csrf)).status_code == 200
     assert (await client.get(f"{OWN}/packs")).json()["packs"] == []
 

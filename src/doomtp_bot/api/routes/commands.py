@@ -199,6 +199,8 @@ async def command_versions(request: Request, name: str, caller: Caller = PERSONA
 
 class RevertBody(BaseModel):
     version: int = Field(ge=1)
+    # The channel the old body is checked in again, as for an edit; the bot-wide filter when left out.
+    channel: str | None = Field(default=None, max_length=40)
 
 
 @router.post("/me/custom-commands/{name}/revert")
@@ -208,8 +210,11 @@ async def revert_command(
     """`cc revert`: the old body comes back as a new version."""
     user_id, _ = _me(caller)
     command = await _own(request, user_id, name)
+    channel_id, prefix = _where_from(request, body.channel)
     try:
-        updated = await _commands(request).revert(command, body.version, actor_via=caller.actor.via)
+        updated = await _commands(request).revert(
+            command, body.version, channel_id=channel_id, prefix=prefix, actor_via=caller.actor.via
+        )
     except CustomCommandError as exc:
         raise _refused(exc) from exc
     return _custom_json(updated)
@@ -721,7 +726,10 @@ class PackRef(BaseModel):
     owner: str | None = Field(default=None, max_length=40)
 
 
-async def _resolve_pack(request: Request, caller: Caller, name: str, owner: str | None) -> Pack:
+async def _resolve_pack(
+    request: Request, caller: Caller, name: str, owner: str | None, *, publishing: bool = True
+) -> Pack:
+    """Only publishing needs every command shared: unpublishing must still work once the owner unshares."""
     user_id, _ = _me(caller)
     packs = _packs(request)
     if owner is None:
@@ -730,7 +738,7 @@ async def _resolve_pack(request: Request, caller: Caller, name: str, owner: str 
     pack = await packs.by_owner(user["id"], name) if user else None
     if pack is None:
         raise HTTPException(status_code=404, detail=f"@{owner} has no pack named {name}")
-    if user and user["id"] != user_id:
+    if publishing and user and user["id"] != user_id:
         members = await packs.members(pack.id)
         if not members or not all(c.shareable for c in members):
             raise HTTPException(status_code=403, detail=f"@{owner} hasn't shared every command in {pack.name}")
@@ -760,7 +768,7 @@ async def publish_pack_in(request: Request, scope: str, body: PackRef, caller: C
 async def unpublish_pack_in(
     request: Request, scope: str, name: str, owner: str | None, caller: Caller
 ) -> dict[str, Any]:
-    pack = await _resolve_pack(request, caller, name, owner)
+    pack = await _resolve_pack(request, caller, name, owner, publishing=False)
     removed = await _packs(request).unpublish(
         channel_id=scope, pack=pack, actor_user_id=caller.actor.user_id, actor_via=caller.actor.via
     )

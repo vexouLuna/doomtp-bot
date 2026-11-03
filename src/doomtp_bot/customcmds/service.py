@@ -26,7 +26,7 @@ from doomtp_bot.lang.errors import ParseError
 from doomtp_bot.lang.parser import Context, ParserParams, parse
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.runtime.result import CommandError, to_json
-from doomtp_bot.storage.db import Connection, Row, fetch_one, transaction
+from doomtp_bot.storage.db import Connection, Row, fetch_one, fetch_value, transaction
 
 if TYPE_CHECKING:
     from doomtp_bot.filters.service import FilterService
@@ -287,12 +287,12 @@ class CustomCommandService:
         if name in FORM_NAMES:
             raise CustomCommandError(f"{name} is part of the command language")
         self.check_body(body, name, channel_id=channel_id, prefix=prefix)
-        if await self.by_owner(owner_user_id, name) is not None:
-            raise CustomCommandError(f"you already have a command named {name}")
-        if await self.count_owned(owner_user_id) >= self.quota:
-            raise CustomCommandError(f"you've reached the limit of {self.quota} commands")
         command_id, ts = new_id(), now_ms()
-        async with transaction(self.conn):
+        async with transaction(self.conn):  # checked under the write lock, so two creates can't both pass
+            if await self.by_owner(owner_user_id, name) is not None:
+                raise CustomCommandError(f"you already have a command named {name}")
+            if await self.count_owned(owner_user_id) >= self.quota:
+                raise CustomCommandError(f"you've reached the limit of {self.quota} commands")
             await self.conn.execute(
                 "INSERT INTO custom_commands (id, owner_user_id, owner_login, name, current_version,"
                 " created_at, updated_at) VALUES (%s, %s, %s, %s, 1, %s, %s)",
@@ -316,8 +316,11 @@ class CustomCommandService:
         return await self._new_version(command, body, actor_via)
 
     async def _new_version(self, command: CustomCommand, body: str, actor_via: str) -> CustomCommand:
-        version = command.version + 1
         async with transaction(self.conn):
+            # Read under the write lock: `command` may be stale if another edit landed since it was loaded.
+            version = 1 + await fetch_value(
+                self.conn, "SELECT current_version FROM custom_commands WHERE id = %s", (command.id,)
+            )
             await self._add_version(command.id, version, body)
             await self.conn.execute(
                 "UPDATE custom_commands SET current_version = %s, updated_at = %s WHERE id = %s",
@@ -330,7 +333,10 @@ class CustomCommandService:
         assert updated is not None
         return updated
 
-    async def revert(self, command: CustomCommand, version: int, *, actor_via: str = "chat") -> CustomCommand:
+    async def revert(
+        self, command: CustomCommand, version: int, *, channel_id: str, prefix: str, actor_via: str = "chat"
+    ) -> CustomCommand:
+        """The old body as a new version, checked again: the filter or the language may have changed."""
         row = await fetch_one(
             self.conn,
             "SELECT body FROM custom_command_versions WHERE command_id = %s AND version = %s",
@@ -338,7 +344,8 @@ class CustomCommandService:
         )
         if row is None:
             raise CustomCommandError(f"{command.name} has no version {version}")
-        return await self._new_version(command, row["body"], actor_via)  # checked when it was stored
+        self.check_body(row["body"], channel_id=channel_id, prefix=prefix)
+        return await self._new_version(command, row["body"], actor_via)
 
     async def delete(self, command: CustomCommand, *, actor_via: str = "chat") -> tuple[int, int]:
         """Soft delete. Links and publications stop working at once; returns what was affected."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -143,7 +144,7 @@ async def test_edits_are_live_and_deletes_break_links_immediately(h: Harness) ->
     assert edited.version == 2
     assert await h.say("bob", "!hi") == "two"
 
-    reverted = await h.service.revert(edited, 1)
+    reverted = await h.service.revert(edited, 1, channel_id=CHANNEL_ID, prefix="!")
     assert (reverted.version, await h.say("bob", "!hi")) == (3, "one")
 
     links, publications = await h.service.delete(reverted)
@@ -523,6 +524,30 @@ async def test_param_declaration_is_rejected_when_malformed(h: Harness) -> None:
     assert gap.result.code == Code.USAGE and "1, 2, 3" in (gap.result.message or "")
 
 
+async def test_removing_a_param_moves_the_later_ones_down(h: Harness) -> None:
+    await h.say("alice", "!cc add trio echo {arg.b} {arg.c}")
+    for decl in ("1 name=a", "2 name=b", "3+ name=c"):
+        await h.say("alice", f"!cc param trio {decl}")
+    assert (
+        await h.say("alice", "!cc param trio 1 remove") == "!trio [b] [c…]. 1 b: str (optional); 2+ c: str (optional)"
+    )
+    assert (
+        await h.say("alice", "!cc param trio 7 remove") == "!trio [b] [c…]. 1 b: str (optional); 2+ c: str (optional)"
+    )
+
+
+async def test_a_position_that_is_not_one_is_a_usage_error(h: Harness) -> None:
+    await h.say("alice", "!cc add pick echo {arg.choice}")
+    for position in ("x", "0", "²"):
+        bad = await h.run("alice", f"!cc param pick {position} name=choice")
+        assert bad.result.code == Code.USAGE and "a position is" in (bad.result.message or ""), position
+    bad_len = await h.run("alice", "!cc param pick 1 name=choice max_len=²")
+    assert bad_len.result.code == Code.USAGE and "max_len" in (bad_len.result.message or "")
+    for version in ("²", "9" * 20):  # past an int column, too
+        revert = await h.run("alice", f"!cc revert pick {version}")
+        assert revert.result.code == Code.USAGE and "version must be a number" in (revert.result.message or "")
+
+
 async def test_help_lists_custom_commands_the_caller_can_run(h: Harness) -> None:
     await h.say("alice", "!cc add hype echo hyped")
     await h.say("alice", "!cc describe hype gets the chat hyped")
@@ -581,3 +606,44 @@ async def test_the_service_checks_a_body_before_storing_it(dbs: Databases) -> No
     with pytest.raises(CustomCommandError, match="invalid command name"):
         await service.edit(command, "echo hi | !echo", channel_id=CHANNEL_ID, prefix="?")
     assert await service.owned_by(alice["id"]) == [command]  # nothing else was stored
+
+
+async def test_a_revert_is_checked_again_and_edits_from_a_stale_copy_stack(dbs: Databases) -> None:
+    filters = FilterService(dbs.bot)
+    await filters.reload()
+    service = CustomCommandService(dbs.bot, filters=filters)
+    alice = USERS["alice"]
+    where = {"channel_id": CHANNEL_ID, "prefix": "!"}
+    command = await service.create(
+        owner_user_id=alice["id"], owner_login=alice["name"], name="hi", body="echo good", **where
+    )
+    await service.edit(command, "echo nice", **where)
+    stale = await service.edit(command, "echo fine", **where)  # `command` still says v1
+    assert stale.version == 3
+
+    await filters.add(channel_id=CHANNEL_ID, pattern="good", actor_user_id="300", via="chat")
+    with pytest.raises(CustomCommandError, match="filter rejects"):
+        await service.revert(stale, 1, **where)
+    assert (await service.by_id(command.id)).body == "echo fine"  # type: ignore[union-attr]
+
+
+async def test_concurrent_creates_stay_within_the_quota(dbs: Databases) -> None:
+    service = CustomCommandService(dbs.bot)
+    service.quota = 1
+    alice = USERS["alice"]
+    tries = await asyncio.gather(
+        *(
+            service.create(
+                owner_user_id=alice["id"],
+                owner_login=alice["name"],
+                name=n,
+                body="echo hi",
+                channel_id=CHANNEL_ID,
+                prefix="!",
+            )
+            for n in ("one", "two", "three")
+        ),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(t, CustomCommandError) for t in tries) == 2
+    assert len(await service.owned_by(alice["id"])) == 1

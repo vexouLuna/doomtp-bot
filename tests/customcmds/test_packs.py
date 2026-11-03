@@ -171,6 +171,78 @@ async def test_publishing_a_pack_refuses_name_clashes_and_changes_nothing(h: Har
     assert await h.say("mod", "!hit") == "mod's hit"  # unchanged
 
 
+async def test_two_packs_cannot_offer_one_name_in_a_channel_but_internal_members_never_clash(h: Harness) -> None:
+    for who in ("alice", "bob"):
+        await h.say(who, f"!cc add hit echo {who}'s hit")
+        await h.say(who, "!cc add helper echo helping")
+        await h.say(who, f"!cc pack create {who}s")
+        await h.say(who, f"!cc pack add {who}s hit helper")
+        await h.say(who, f"!cc pack internal {who}s helper on")
+        await h.say(who, f"!cc pack share {who}s on")
+    await h.say("mod", "!cc publish pack @alice alices")
+    clash = await h.run("mod", "!cc publish pack @bob bobs")
+    assert clash.result.code == Code.USAGE and clash.result.message is not None
+    assert "hit" in clash.result.message and "helper" not in clash.result.message
+    assert await h.say("bob", "!hit") == "alice's hit"
+
+    await h.say("bob", "!cc pack rm bobs hit")
+    assert (await h.run("mod", "!cc publish pack @bob bobs")).result.ok  # only the internal helper is left
+
+
+async def test_unpublishing_a_pack_keeps_grants_of_a_member_published_on_its_own(h: Harness) -> None:
+    await h.say("alice", "!cc add hit echo hit me")
+    await h.say("alice", "!cc pack create blackjack")
+    await h.say("alice", "!cc pack add blackjack hit")
+    await h.say("alice", "!cc pack share blackjack on")
+    await h.say("mod", "!cc publish pack @alice blackjack")
+    command = await h.service.by_owner(USERS["alice"]["id"], "hit")
+    assert command is not None
+    await h.service.publish(channel_id=CHANNEL_ID, name="hit", command=command, published_by=USERS["mod"]["id"])
+    access = VariableAccessPolicy(h.policy, h.dbs.bot)
+    await access.set_grant(CHANNEL_ID, command.id, "channel.points", True, USERS["mod"]["id"])
+
+    await h.say("mod", "!cc unpublish pack @alice blackjack")
+    await access.reload()
+    assert access.granted(CHANNEL_ID, command.id) == {"channel.points"}
+
+
+async def test_a_pack_add_with_a_missing_command_changes_nothing(h: Harness) -> None:
+    await h.say("alice", "!cc add hit echo hit me")
+    await h.say("alice", "!cc add stand echo standing")
+    await h.say("alice", "!cc pack create blackjack")
+    refused = await h.run("alice", "!cc pack add blackjack hit nope stand")
+    assert refused.result.code == Code.USAGE
+    assert refused.result.message == "you don't have a command named nope; nothing changed"
+    assert await h.say("alice", "!cc pack info blackjack") == "blackjack: empty (not published here)"
+
+
+async def test_a_moderator_unpublishes_a_pack_its_owner_stopped_sharing(h: Harness) -> None:
+    await h.say("alice", "!cc add hit echo hit me")
+    await h.say("alice", "!cc pack create blackjack")
+    await h.say("alice", "!cc pack add blackjack hit")
+    await h.say("alice", "!cc pack share blackjack on")
+    await h.say("mod", "!cc publish pack @alice blackjack")
+    await h.say("alice", "!cc pack share blackjack off")
+    refused = await h.run("mod", "!cc publish pack @alice blackjack")
+    assert refused.result.code == Code.USAGE  # publishing still needs it shared
+    assert (await h.run("mod", "!cc unpublish pack @alice blackjack")).result.ok
+    assert await h.say("bob", "!hit") is None
+
+
+async def test_a_command_or_pack_called_global_is_a_name_not_the_flag(h: Harness) -> None:
+    await h.say("mod", "!cc add hype echo hyped")
+    reply = await h.say("mod", "!cc publish hype as global")
+    assert reply is not None and "as !global here" in reply
+    assert await h.say("bob", "!global") == "hyped"
+    await h.say("mod", "!cc add one echo one")
+    await h.say("mod", "!cc pack create global")
+    await h.say("mod", "!cc pack add global one")
+    assert (await h.run("mod", "!cc publish pack global")).result.ok
+    assert await h.say("bob", "!one") == "one"
+    refused = await h.run("mod", "!cc publish pack global global")  # the flag after the name still is one
+    assert refused.result.code == Code.DENIED
+
+
 @pytest.mark.parametrize("name", ["core_admin", "automation", "triggers"])
 async def test_pack_names_cannot_shadow_a_builtin_module(h: Harness, name: str) -> None:
     refused = await h.run("alice", f"!cc pack create {name}")

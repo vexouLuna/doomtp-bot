@@ -91,8 +91,15 @@ def _trigger_keys(ctx: CommandContext, pack: Pack) -> list[str]:
 
 
 def _scope(ctx: CommandContext, words: list[str]) -> str:
-    """`global` at the end of a publish makes it a derived command, for bot admins only (ADR-0012)."""
-    if words and words[-1].lower() == "global":
+    """`global` after the names of a publish makes it a derived command, for bot admins only (ADR-0012).
+    `words` is `publish|unpublish <name> [as <name>] [global]` or `… pack [@owner] <name> [global]`, so a
+    command or pack that is itself called `global` isn't read as the flag."""
+    at = 2
+    if len(words) > 1 and words[1].lower() == "pack":
+        at = 4 if len(words) > 2 and words[2].startswith("@") else 3
+    elif len(words) > 2 and words[2].lower() == "as":
+        at = 4
+    if len(words) > at and words[at].lower() == "global":
         if rank(ctx) < BOT_ADMIN_RANK:
             raise CommandError("only bot admins can publish globally", Code.DENIED)
         return GLOBAL
@@ -245,9 +252,9 @@ async def _versions(ctx: CommandContext, v: list[str], args: Args) -> Result:
 async def _revert(ctx: CommandContext, v: list[str], args: Args) -> Result:
     need(v, 3, USAGE)
     command = await _own(ctx, v[1])
-    if not v[2].isdigit():
+    if not (v[2].isascii() and v[2].isdigit() and len(v[2]) <= 9):  # int() refuses some isdigit() strings
         raise CommandError("version must be a number")
-    updated = await _service(ctx).revert(command, int(v[2]))
+    updated = await _service(ctx).revert(command, int(v[2]), channel_id=ctx.channel.id, prefix=ctx.channel.prefix)
     return Result.success(f"{command.name} reverted to v{v[2]}, now v{updated.version}: {updated.body}")
 
 
@@ -361,15 +368,12 @@ async def _pack(ctx: CommandContext, v: list[str], args: Args) -> Result:
         raise CommandError(f"usage: {USAGE}")
     need(v, 4, USAGE)
     changed: list[str] = []
-    for command_name in v[3:]:
-        command = await _service(ctx).by_owner(user_id, command_name)
-        if command is None:
-            raise CommandError(f"you don't have a command named {command_name}")
+    for member in await _owned(ctx, user_id, v[3:]):
         if action == "add":
-            await packs.add_member(pack, command)
-            changed.append(command.name)
-        elif await packs.remove_member(pack, command):
-            changed.append(command.name)
+            await packs.add_member(pack, member)
+            changed.append(member.name)
+        elif await packs.remove_member(pack, member):
+            changed.append(member.name)
     verb = "added to" if action == "add" else "removed from"
     return Result.success(f"{', '.join(changed) or 'nothing'} {verb} {pack.name}", changed)
 
@@ -490,20 +494,31 @@ async def _pack_trigger(ctx: CommandContext, v: list[str], args: Args) -> Result
     )
 
 
+async def _owned(
+    ctx: CommandContext, user_id: str, names: list[str], members: set[str] | None = None, pack: Pack | None = None
+) -> list[CustomCommand]:
+    """The caller's commands by name, every one found (and in `members`, when given) before any changes."""
+    found: list[CustomCommand] = []
+    for command_name in names:
+        command = await _service(ctx).by_owner(user_id, command_name)
+        if command is None:
+            raise CommandError(f"you don't have a command named {command_name}; nothing changed")
+        if members is not None and pack is not None and command.name not in members:
+            raise CommandError(f"{command.name} isn't in {pack.name}; nothing changed")
+        found.append(command)
+    return found
+
+
 async def _pack_internal(ctx: CommandContext, packs: PackService, pack: Pack, rest: list[str], user_id: str) -> Result:
     """An internal member runs only from the bodies of its pack's other commands (ADR-0019)."""
     if len(rest) < 2 or rest[-1].lower() not in ("on", "off"):
         raise CommandError(f"usage: {ctx.channel.prefix}cc pack internal <pack> <command…> on|off")
     internal = rest[-1].lower() == "on"
+    commands = await _owned(ctx, user_id, rest[:-1], {c.name for c in await packs.members(pack.id)}, pack)
     changed: list[str] = []
-    for command_name in rest[:-1]:
-        command = await _service(ctx).by_owner(user_id, command_name)
-        if command is None:
-            raise CommandError(f"you don't have a command named {command_name}")
-        if command.name not in {c.name for c in await packs.members(pack.id)}:
-            raise CommandError(f"{command.name} isn't in {pack.name}")
-        if await packs.set_internal(pack, command, internal):
-            changed.append(command.name)
+    for member in commands:
+        if await packs.set_internal(pack, member, internal):
+            changed.append(member.name)
     state = "internal: only its commands can call them" if internal else "public again"
     return Result.success(f"{', '.join(changed) or 'nothing'} in {pack.name} now {state}", changed)
 
@@ -516,16 +531,11 @@ async def _pack_role(ctx: CommandContext, packs: PackService, pack: Pack, rest: 
     role = rest[-1].lower()
     if role not in PACK_ROLES:
         raise CommandError(f"a pack sets one of: {', '.join(PACK_ROLES)}")
-    members = {c.name for c in await packs.members(pack.id)}
+    commands = await _owned(ctx, user_id, rest[:-1], {c.name for c in await packs.members(pack.id)}, pack)
     changed: list[str] = []
-    for command_name in rest[:-1]:
-        command = await _service(ctx).by_owner(user_id, command_name)
-        if command is None:
-            raise CommandError(f"you don't have a command named {command_name}")
-        if command.name not in members:
-            raise CommandError(f"{command.name} isn't in {pack.name}")
-        if await packs.set_role(pack, command, role):
-            changed.append(command.name)
+    for member in commands:
+        if await packs.set_role(pack, member, role):
+            changed.append(member.name)
     rank = "open to everyone" if role == "everyone" else f"{role} and up, wherever it's published"
     return Result.success(f"{', '.join(changed) or 'nothing'} in {pack.name} now {rank}", changed)
 
@@ -629,8 +639,9 @@ async def _publish(ctx: CommandContext, v: list[str], args: Args) -> Result:
     return Result.success(text + _grant_warning(ctx, [command], scope), {"name": name})
 
 
-async def _resolve_pack(ctx: CommandContext, v: list[str], at: int) -> Any:
-    """`<name>` is the caller's own pack; `@owner <name>` is someone else's, if they shared its commands."""
+async def _resolve_pack(ctx: CommandContext, v: list[str], at: int, *, publishing: bool = True) -> Any:
+    """`<name>` is the caller's own pack; `@owner <name>` is someone else's, if they shared its commands.
+    Only publishing needs that: unpublishing must still work once the owner unshares or empties it."""
     user_id, _ = _invoker(ctx)
     packs = _packs(ctx)
     if v[at].startswith("@"):
@@ -640,7 +651,7 @@ async def _resolve_pack(ctx: CommandContext, v: list[str], at: int) -> Any:
         if pack is None:
             raise CommandError(f"@{owner['name']} has no pack named {v[at + 1]}")
         members = await packs.members(pack.id)
-        if not members or not all(c.shareable for c in members):
+        if publishing and (not members or not all(c.shareable for c in members)):
             raise CommandError(f"@{owner['name']} hasn't shared every command in {pack.name}")
         return pack
     pack = await packs.by_owner(user_id, v[at])
@@ -688,7 +699,7 @@ async def _unpublish(ctx: CommandContext, v: list[str], args: Args) -> Result:
     user_id, _ = _invoker(ctx)
     if v[1].lower() == "pack":
         need(v, 3, USAGE)
-        pack = await _resolve_pack(ctx, v, 2)
+        pack = await _resolve_pack(ctx, v, 2, publishing=False)
         if not await _packs(ctx).unpublish(channel_id=scope, pack=pack, actor_user_id=user_id):
             raise CommandError(f"{pack.name} isn't published {_where(scope)}")
         return Result.success(f"unpublished pack {pack.name} {_where(scope)}; its write grants went too")

@@ -236,7 +236,8 @@ class PackService:
                 " JOIN custom_command_packs k ON k.id = m.pack_id"
                 " JOIN custom_command_pack_publications p ON p.pack_id = k.id"
                 " WHERE p.channel_id = %s AND p.status = 'active' AND k.status = 'active'"
-                " AND c.status = 'active' AND NOT m.internal AND c.name = %s",
+                " AND c.status = 'active' AND NOT m.internal AND c.name = %s"
+                " ORDER BY p.created_at, k.id LIMIT 1",  # `conflicts` keeps it to one; old rows, the first
                 (scope, name.lower()),
             )
             if row is not None:
@@ -373,11 +374,22 @@ class PackService:
         await self._published_changed()
 
     async def conflicts(self, channel_id: str, pack: Pack) -> list[str]:
-        """Member names already published in this channel by a different command (ADR-0012)."""
+        """Member names already published in this channel by a different command, on its own or in
+        another pack (ADR-0012). Internal members aren't offered, so they can't clash."""
         clashes: list[str] = []
-        for member in await self.members(pack.id):
+        for member in await self.members(pack.id, internal=False):
             found = await self.commands.publication(channel_id, member.name)
-            if found is not None and found[1].id != member.id:
+            other = await fetch_one(
+                self.conn,
+                "SELECT 1 FROM custom_command_pack_publications p"
+                " JOIN custom_command_packs k ON k.id = p.pack_id"
+                " JOIN custom_command_pack_members m ON m.pack_id = k.id"
+                " JOIN custom_commands c ON c.id = m.command_id"
+                " WHERE p.channel_id = %s AND p.status = 'active' AND k.status = 'active' AND k.id <> %s"
+                " AND c.status = 'active' AND NOT m.internal AND c.name = %s AND c.id <> %s",
+                (channel_id, pack.id, member.name, member.id),
+            )
+            if (found is not None and found[1].id != member.id) or other is not None:
                 clashes.append(member.name)
         return clashes
 
@@ -418,10 +430,15 @@ class PackService:
                 (channel_id, pack.id),
             )
             if cur.rowcount:
+                # Grants go with the publication, except for a member still published here another way.
                 await self.conn.execute(
                     "DELETE FROM publication_write_grants WHERE channel_id = %s AND command_id IN"
-                    " (SELECT command_id FROM custom_command_pack_members WHERE pack_id = %s)",
-                    (channel_id, pack.id),
+                    " (SELECT command_id FROM custom_command_pack_members WHERE pack_id = %s)"
+                    " AND command_id NOT IN (SELECT command_id FROM custom_command_publications"
+                    "  WHERE channel_id = %s AND status <> 'orphaned')"
+                    " AND command_id NOT IN (SELECT m.command_id FROM custom_command_pack_members m"
+                    "  JOIN custom_command_pack_publications p ON p.pack_id = m.pack_id WHERE p.channel_id = %s)",
+                    (channel_id, pack.id, channel_id, channel_id),
                 )
                 await self.commands._audit(
                     actor_via,
