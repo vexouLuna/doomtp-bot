@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, cast
 
 from doomtp_bot.filters.matcher import Action, FilterError, Kind
 from doomtp_bot.filters.service import ACTIONS
+from doomtp_bot.ints import ascii_int
 from doomtp_bot.modules._common import need, rank
 from doomtp_bot.modules.services import service
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK, GLOBAL
@@ -120,9 +121,9 @@ async def filter_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> R
         )
 
     need(values, 2, USAGE)
-    if not values[1].isdigit():
+    entry_id = ascii_int(values[1])
+    if entry_id is None:
         raise CommandError(f"give the entry id from {ctx.channel.prefix}filter list")
-    entry_id = int(values[1])
     if action == "rm":
         removed = await service.remove(channel_id=scope, entry_id=entry_id, actor_user_id=actor_id, via="chat")
         if not removed:

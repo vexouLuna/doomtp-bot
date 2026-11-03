@@ -215,7 +215,10 @@ async def convert(
             raise ConversionError("expected a list like [1, 2]" if kind is list else 'expected a map like {"a": 1}')
         return converted
     elif type_name == "url":
-        parts = urlsplit(text)
+        try:
+            parts = urlsplit(text)
+        except ValueError:
+            raise ConversionError("expected an http(s) URL") from None
         if parts.scheme not in ("http", "https") or not parts.netloc:
             raise ConversionError("expected an http(s) URL")
         return text
