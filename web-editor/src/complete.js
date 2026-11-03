@@ -9,8 +9,8 @@ const option = (label, type, detail) => ({ label, type, detail });
  * command name (at the start of a stage, or after `{!`).
  */
 export function where(text, pos) {
-  const open = text.lastIndexOf("{", pos - 1);
-  const close = text.lastIndexOf("}", pos - 1);
+  const open = pos > 0 ? text.lastIndexOf("{", pos - 1) : -1; // a negative index would count from the end
+  const close = pos > 0 ? text.lastIndexOf("}", pos - 1) : -1;
   if (open > close) {
     const inside = text.slice(open + 1, pos);
     if (/^!\S*$/.test(inside)) return { kind: "command", from: open + 2 };
@@ -26,7 +26,7 @@ export function where(text, pos) {
   const start = pos - word.length;
   const earlier = before.slice(0, start).trimEnd();
   if (/(^|\s)--?>$/.test(earlier)) return { kind: "variable", from: start };
-  if (start === 0 || /(\||\|\||&&|\()$/.test(earlier)) return { kind: "command", from: start };
+  if (earlier === "" || /(\||\|\||&&|\()$/.test(earlier)) return { kind: "command", from: start };
   return { kind: "none" };
 }
 
