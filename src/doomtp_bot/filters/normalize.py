@@ -28,13 +28,16 @@ class Normalized:
 
     text: str
     origin: tuple[int, ...]
+    # The last original index each character stands for: a collapsed run ends at its last repeat.
+    ends: tuple[int, ...] = ()
 
     def span(self, start: int, end: int) -> tuple[int, int]:
         """Map a match on the normalized text back to a slice of the original."""
         if not self.origin or start >= len(self.origin):
             return (0, 0)
         first = self.origin[start]
-        last = self.origin[min(end, len(self.origin)) - 1]
+        at = min(end, len(self.origin)) - 1
+        last = self.ends[at] if self.ends else self.origin[at]
         return (first, last + 1)
 
 
@@ -46,12 +49,14 @@ def normalize(text: str) -> Normalized:
     """
     chars: list[str] = []
     origin: list[int] = []
+    ends: list[int] = []
     for index, raw in enumerate(text):
         if raw in INVISIBLE:
             continue
         if raw in SYMBOLS and not _letter_follows(text, index + 1):
             chars.append(raw)
             origin.append(index)
+            ends.append(index)
             continue
         for decomposed in unicodedata.normalize("NFKD", raw):
             if unicodedata.combining(decomposed):  # accents, after NFKD
@@ -59,10 +64,12 @@ def normalize(text: str) -> Normalized:
             folded = CONFUSABLES.get(decomposed.casefold(), decomposed.casefold())
             for char in folded:
                 if chars and chars[-1] == char:
-                    continue  # "niiiice" → "nice"; patterns are normalized the same way
+                    ends[-1] = index  # "niiiice" → "nice"; patterns are normalized the same way
+                    continue
                 chars.append(char)
                 origin.append(index)
-    return Normalized("".join(chars), tuple(origin))
+                ends.append(index)
+    return Normalized("".join(chars), tuple(origin), tuple(ends))
 
 
 def _letter_follows(text: str, start: int) -> bool:

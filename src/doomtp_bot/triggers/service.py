@@ -179,10 +179,21 @@ def check_cooldowns(type_: str, cooldown_s: int, user_cooldown_s: int) -> None:
         raise TriggerError(f"a {type_} trigger has no chatter, so it takes only the channel-wide cooldown")
 
 
+def check_timer_interval(schedule: dict[str, Any] | None) -> int:
+    """A timer's `every_s`, however it arrived (chat, the API, a pack): a whole number of seconds that
+    `parse_every` would have allowed. Raises TriggerError."""
+    every = (schedule or {}).get("every_s")
+    if not every:
+        raise TriggerError("a timer needs an interval, e.g. every 15m")
+    if isinstance(every, bool) or not isinstance(every, int) or not MIN_TIMER_EVERY_S <= every <= MAX_TIMER_EVERY_S:
+        raise TriggerError(f"interval must be between {MIN_TIMER_EVERY_S}s and 24h")
+    return every
+
+
 def check_pack_schedule(type_: str, schedule: dict[str, Any] | None) -> None:
     """A pack's timer or cron fires at most every 15 minutes, wherever the pack is (ADR-0032)."""
     schedule = schedule or {}
-    if type_ == "timer" and int(schedule.get("every_s") or 0) < MIN_PACK_EVERY_S:
+    if type_ == "timer" and check_timer_interval(schedule) < MIN_PACK_EVERY_S:
         raise TriggerError("a pack's timer runs every 15m or less often")
     if type_ == "cron":
         try:
@@ -463,8 +474,8 @@ class TriggerService:
         check_cooldowns(current.type, new["cooldown_s"], new["user_cooldown_s"])
         if current.type == "listener":
             compile_listener(str(new["match"].get("regex", "")))
-        if current.type == "timer" and not new["schedule"].get("every_s"):
-            raise TriggerError("a timer needs an interval, e.g. every 15m")
+        if current.type == "timer":
+            check_timer_interval(new["schedule"])
         if current.type == "cron":
             try:
                 parse_cron(str(new["schedule"].get("cron", "")))
@@ -563,8 +574,8 @@ class TriggerService:
             raise TriggerError(f"type must be one of: {', '.join(TRIGGER_TYPES)}")
         if type_ == "listener":
             compile_listener(str((match or {}).get("regex", "")))
-        if type_ == "timer" and not (schedule or {}).get("every_s"):
-            raise TriggerError("a timer needs an interval, e.g. every 15m")
+        if type_ == "timer":
+            check_timer_interval(schedule)
         if type_ == "cron":
             try:
                 parse_cron(str((schedule or {}).get("cron", "")))
