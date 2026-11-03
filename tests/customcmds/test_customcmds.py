@@ -152,6 +152,20 @@ async def test_edits_are_live_and_deletes_break_links_immediately(h: Harness) ->
     assert await h.say("bob", "!hi") is None
 
 
+async def test_a_deleted_name_can_be_used_again(h: Harness) -> None:
+    old = await h.add("alice", "foo", "echo old")
+    await h.service.link(user_id=USERS["bob"]["id"], alias="foo", command=old)
+    await h.say("alice", "!cc rm foo")
+    assert (await h.run("alice", "!cc add foo echo new")).result.ok
+    assert await h.say("alice", "!foo") == "new"
+    new = await h.service.by_owner(USERS["alice"]["id"], "foo")
+    assert new is not None and new.id != old.id
+    await h.service.link(user_id=USERS["bob"]["id"], alias="foo", command=new)  # bob's alias was freed too
+    assert await h.say("bob", "!foo") == "new"
+    taken = await h.run("bob", "!cc add foo echo mine")  # bob's alias holds the name his own command needs
+    assert taken.result.code == Code.USAGE and "alias named foo" in (taken.result.message or "")
+
+
 async def test_deleting_orphans_publications(h: Harness) -> None:
     command = await h.add("alice", "roll", "echo rolled")
     await h.service.publish(channel_id=CHANNEL_ID, name="roll", command=command, published_by=USERS["mod"]["id"])

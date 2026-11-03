@@ -293,6 +293,8 @@ class CustomCommandService:
                 raise CustomCommandError(f"you already have a command named {name}")
             if await self.count_owned(owner_user_id) >= self.quota:
                 raise CustomCommandError(f"you've reached the limit of {self.quota} commands")
+            if await self._alias_taken(owner_user_id, name):  # the command's own alias is its name
+                raise CustomCommandError(f"you already have an alias named {name}; {name} would replace it")
             await self.conn.execute(
                 "INSERT INTO custom_commands (id, owner_user_id, owner_login, name, current_version,"
                 " created_at, updated_at) VALUES (%s, %s, %s, %s, 1, %s, %s)",
@@ -360,6 +362,8 @@ class CustomCommandService:
                 (command.id,),
             )
             await self.conn.execute("DELETE FROM publication_write_grants WHERE command_id = %s", (command.id,))
+            # They stopped working already; deleting them frees the aliases, the owner's name among them.
+            await self.conn.execute("DELETE FROM custom_command_links WHERE command_id = %s", (command.id,))
             await self._audit(actor_via, command.owner_user_id, "cc.delete", command.id, command.name, None)
         await self._grants_changed()
         return affected
@@ -399,14 +403,23 @@ class CustomCommandService:
             raise CustomCommandError("aliases: lowercase letters, digits, _ and -, up to 32, not only digits")
         if alias in FORM_NAMES:
             raise CustomCommandError(f"{alias} is part of the command language")
-        if await self.personal(user_id, alias) is not None:
-            raise CustomCommandError(f"you already have an alias named {alias}")
         async with transaction(self.conn):
+            if await self._alias_taken(user_id, alias):
+                raise CustomCommandError(f"you already have an alias named {alias}")
             await self.conn.execute(
                 "INSERT INTO custom_command_links (user_id, alias, command_id, created_at) VALUES (%s, %s, %s, %s)",
                 (user_id, alias, command.id, now_ms()),
             )
             await self._audit(actor_via, user_id, "cc.link", command.id, None, {"alias": alias})
+
+    async def _alias_taken(self, user_id: str, alias: str) -> bool:
+        """Any link row holds the alias, whatever state its command is in: the key is (user, alias)."""
+        return (
+            await fetch_one(
+                self.conn, "SELECT 1 FROM custom_command_links WHERE user_id = %s AND alias = %s", (user_id, alias)
+            )
+            is not None
+        )
 
     async def unlink(self, *, user_id: str, alias: str, actor_via: str = "chat") -> bool:
         async with transaction(self.conn):

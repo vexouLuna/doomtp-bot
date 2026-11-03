@@ -243,6 +243,13 @@ async def test_a_command_or_pack_called_global_is_a_name_not_the_flag(h: Harness
     assert refused.result.code == Code.DENIED
 
 
+async def test_a_deleted_pack_name_can_be_used_again(h: Harness) -> None:
+    await h.say("alice", "!cc pack create kit")
+    await h.say("alice", "!cc pack delete kit")
+    assert (await h.run("alice", "!cc pack create kit")).result.ok
+    assert await h.say("alice", "!cc pack list") == "your packs: kit (0)"
+
+
 @pytest.mark.parametrize("name", ["core_admin", "automation", "triggers"])
 async def test_pack_names_cannot_shadow_a_builtin_module(h: Harness, name: str) -> None:
     refused = await h.run("alice", f"!cc pack create {name}")

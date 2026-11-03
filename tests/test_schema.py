@@ -309,3 +309,25 @@ def test_copies_of_a_moderation_event_go_keeping_the_earliest(empty_database: st
                 "INSERT INTO chatlog.mod_events (channel_id, type, target_user_id, at, raw, raw_format)"
                 " VALUES ('c1', 'timeout', 'u1', 2000, '{}', 'legacy')"
             )
+
+
+def test_deleted_names_are_reusable_and_the_downgrade_still_applies(empty_database: str) -> None:
+    """0020 lets a deleted command's name be taken again; down, the deleted copy is renamed out of the way."""
+    command.upgrade(schema.config("bot", empty_database), "0019")
+    insert = (
+        "INSERT INTO bot.custom_commands (id, owner_user_id, name, current_version, status, created_at, updated_at)"
+        " VALUES (%s, 'u1', 'foo', 1, %s, 0, 0)"
+    )
+    with psycopg.connect(empty_database) as conn:
+        conn.execute(insert, ("cc_old", "deleted"))
+        conn.execute("INSERT INTO bot.custom_command_links VALUES ('u1', 'foo', 'cc_old', 0)")
+    command.upgrade(schema.config("bot", empty_database), "0020")
+    with psycopg.connect(empty_database) as conn:
+        assert conn.execute("SELECT count(*) FROM bot.custom_command_links").fetchone() == (0,)
+        conn.execute(insert, ("cc_new", "active"))
+    with psycopg.connect(empty_database) as conn, pytest.raises(psycopg.errors.UniqueViolation):
+        conn.execute(insert, ("cc_dup", "active"))  # still one live command per name
+    schema.downgrade(empty_database, {"bot": "0019"})
+    with psycopg.connect(empty_database) as conn:
+        names = conn.execute("SELECT id, name FROM bot.custom_commands ORDER BY id").fetchall()
+    assert names == [("cc_new", "foo"), ("cc_old", "foo~cc_old")]
