@@ -1,7 +1,17 @@
 import asyncio
 
+import pytest
+
 from doomtp_bot.storage import schema
-from doomtp_bot.storage.db import Databases, execute, fetch_all, fetch_value, schema_revision, transaction
+from doomtp_bot.storage.db import (
+    Databases,
+    execute,
+    fetch_all,
+    fetch_value,
+    outside,
+    schema_revision,
+    transaction,
+)
 
 
 async def test_both_schemas_are_at_this_builds_head(dbs: Databases) -> None:
@@ -89,3 +99,23 @@ async def test_transactions_sharing_a_connection_do_not_interleave(dbs: Database
     assert [type(r).__name__ for r in results] == ["NoneType"] * 3 + ["RuntimeError"] + ["NoneType"] * 2
     rows = await fetch_all(dbs.bot, "SELECT user_id FROM global_admins ORDER BY user_id")
     assert [r["user_id"] for r in rows] == ["0", "1", "2", "4", "5"]
+
+
+async def test_the_outside_connection_never_joins_another_tasks_transaction(database_url: str) -> None:
+    """C99: an API read sent while a bot task holds the shared connection's transaction saw its rows."""
+    databases = await Databases.open(database_url)
+    try:
+        assert outside(databases.bot) is not databases.bot
+        with pytest.raises(RuntimeError):
+            async with transaction(databases.bot):
+                await execute(
+                    databases.bot,
+                    "INSERT INTO global_admins (user_id, user_login, granted_by, granted_at) VALUES ('c99', 'x', 'system', 0)",
+                )
+                seen = await fetch_value(
+                    outside(databases.bot), "SELECT count(*) FROM global_admins WHERE user_id = 'c99'"
+                )
+                assert seen == 0  # uncommitted: not visible outside
+                raise RuntimeError("roll back")
+    finally:
+        await databases.close()

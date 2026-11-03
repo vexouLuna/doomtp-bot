@@ -29,6 +29,7 @@ from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.policy.snapshot import ChannelSettings
 from doomtp_bot.runtime.values import MISSING, render
 from doomtp_bot.runtime.variables import VariableError, WriteOp, key_for
+from doomtp_bot.storage.db import outside
 from doomtp_bot.triggers.service import MAX_COOLDOWN_S, Trigger, TriggerError, TriggerService
 from doomtp_bot.variables.store import Entry
 
@@ -366,7 +367,7 @@ def _pack_trigger_json(trigger: Trigger) -> dict[str, Any]:
 
 async def _pack_scopes(request: Request, pack: Pack) -> list[str]:
     """Where a pack is published: channel ids, or GLOBAL."""
-    async with await _packs(request).conn.execute(
+    async with await outside(_packs(request).conn).execute(
         "SELECT channel_id FROM custom_command_pack_publications WHERE pack_id = %s AND status = 'active'"
         " ORDER BY channel_id",
         (pack.id,),

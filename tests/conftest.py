@@ -117,7 +117,7 @@ async def dbs(database_url: str) -> AsyncIterator[Databases]:
     what an empty database contains. Writes the code makes through `storage.db.transaction()` nest as
     savepoints inside it and behave normally.
     """
-    databases = await Databases.open(database_url)
+    databases = await Databases.open(database_url, pair=False)  # `outside` would not see the test's rows
     try:
         async with databases.bot.transaction() as bot_tx, databases.chatlog.transaction():
             yield databases

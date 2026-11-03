@@ -16,7 +16,7 @@ import secrets
 from dataclasses import dataclass
 
 from doomtp_bot.clock import now_ms
-from doomtp_bot.storage.db import Connection, Row, fetch_value, transaction
+from doomtp_bot.storage.db import Connection, Row, fetch_value, outside, transaction
 
 PREFIX = "dtb_"
 SCOPES = ("read", "write")
@@ -78,18 +78,19 @@ class ApiKeyService:
         """The key behind a `Authorization: Bearer …` header, or None. Records that it was used."""
         if not presented.startswith(PREFIX):
             return None
-        async with await self.conn.execute(
+        conn = outside(self.conn)  # a stamp another task's rollback must not take back (C99)
+        async with await conn.execute(
             f"{_SELECT} WHERE key_hash = %s AND revoked_at IS NULL", (fingerprint(presented),)
         ) as cur:
             row = await cur.fetchone()
         if row is None:
             return None
-        await self.conn.execute("UPDATE api_keys SET last_used_at = %s WHERE id = %s", (now_ms(), row["id"]))
+        await conn.execute("UPDATE api_keys SET last_used_at = %s WHERE id = %s", (now_ms(), row["id"]))
         return _key(row)
 
     async def list(self) -> list[ApiKey]:
         """The keys still in use; revoked ones stay in the table for the audit trail."""
-        async with await self.conn.execute(f"{_SELECT} WHERE revoked_at IS NULL ORDER BY id") as cur:
+        async with await outside(self.conn).execute(f"{_SELECT} WHERE revoked_at IS NULL ORDER BY id") as cur:
             return [_key(row) for row in await cur.fetchall()]
 
     async def revoke(self, key_id: int) -> bool:
