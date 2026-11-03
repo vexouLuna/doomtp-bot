@@ -44,6 +44,7 @@ from doomtp_bot.customcmds.params import to_params
 from doomtp_bot.customcmds.resolution import MODULE as CUSTOM_MODULE
 from doomtp_bot.customcmds.resolution import is_custom, published_specs, returns, system_specs
 from doomtp_bot.customcmds.service import CustomCommandService
+from doomtp_bot.modules.core_admin import validate_prefix
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK, GLOBAL
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.policy.settings import CHANNEL_SETTINGS
@@ -239,6 +240,17 @@ async def patch_channel(request: Request, login: str, body: ChannelPatch, caller
     if refused:
         who = RANK_NAMES.get(max(CHANNEL_SETTINGS[k] for k in refused), "an admin")
         raise HTTPException(status_code=403, detail=f"only {who} can change {', '.join(refused)}")
+    # Checked before anything is written, so a bad field refuses the whole patch as a 400.
+    nulls = sorted(k for k, v in changes.items() if v is None)
+    if nulls:
+        raise HTTPException(status_code=400, detail=f"{', '.join(nulls)} can't be null")
+    if "prefix" in changes and (problem := validate_prefix(changes["prefix"])):
+        raise HTTPException(status_code=400, detail=problem)
+    unknown = sorted(
+        {v for k, v in changes.items() if k.endswith("_role") and policy.rank_of(settings.channel_id, v) is None}
+    )
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"no role named {', '.join(unknown)}")
 
     async def write(repo: Any) -> None:
         for column, value in changes.items():
