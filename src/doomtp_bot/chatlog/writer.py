@@ -336,7 +336,8 @@ _SQL: dict[str, str] = {
     ),
     "user_name": (
         "INSERT INTO user_names (user_id, login, display_name, seen_from) VALUES (%s, %s, %s, %s)"
-        " ON CONFLICT DO NOTHING"
+        # A backfilled older message moves the name's first sighting back.
+        " ON CONFLICT (user_id, login) DO UPDATE SET seen_from = LEAST(user_names.seen_from, EXCLUDED.seen_from)"
     ),
     "message": (
         "INSERT INTO messages (message_id, channel_id, user_id, user_login, text, is_self, is_command, source,"

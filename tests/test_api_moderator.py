@@ -309,6 +309,11 @@ async def test_a_channel_patch_is_checked_before_anything_is_written(client: htt
     assert null.status_code == 400 and null.json()["detail"] == "prefix can't be null"
     after = (await client.get(own, headers=auth(write_key))).json()
     assert after["quiet_errors"] is False and after["roles"]["publish_min"] == "moderator"  # nothing applied
+    for zone in ("Mars/Olympus", "../etc/passwd", ""):
+        refused = await client.patch(own, json={"timezone": zone}, headers=auth(write_key))
+        assert refused.status_code == 400 and "timezone" in refused.json()["detail"], zone
+    zoned = await client.patch(own, json={"timezone": "Europe/Berlin"}, headers=auth(write_key))
+    assert zoned.status_code == 200 and zoned.json()["timezone"] == "Europe/Berlin"
     good = await client.patch(own, json={"prefix": "!!", "publish_min_role": "vip"}, headers=auth(write_key))
     assert good.status_code == 200 and good.json()["prefix"] == "!!"
 

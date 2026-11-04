@@ -60,7 +60,7 @@ def _moment(kind: str, value: Any, zone: str) -> datetime:
             raise ValueError
     except (ValueError, OverflowError, OSError):
         raise _type_error(kind, value, "epoch seconds or an ISO 8601 time") from None
-    with contextlib.suppress(ZoneInfoNotFoundError, ValueError):
+    with contextlib.suppress(ZoneInfoNotFoundError, ValueError, OverflowError):
         moment = moment.astimezone(ZoneInfo(zone))
     return moment
 
@@ -137,7 +137,10 @@ def number(value: Any, decimals: str | None = None) -> str:
     if places is not None:
         return f"{x:,.{places}f}"
     whole, dot, fraction = (str(x) if isinstance(x, int) else render_float(x)).partition(".")
-    return f"{int(whole):,}" + dot + fraction if whole.lstrip("-").isdigit() else whole + dot + fraction
+    if not whole.lstrip("-").isdigit():
+        return whole + dot + fraction
+    sign = "-" if whole.startswith("-") else ""  # int("-0") is 0: keep the sign of -0.5
+    return f"{sign}{abs(int(whole)):,}" + dot + fraction
 
 
 def percent(value: Any, decimals: str | None = None) -> str:

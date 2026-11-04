@@ -173,3 +173,18 @@ describe("the shared corpus", () => {
     expect(missed).toEqual([]);
   });
 });
+
+describe("bug-hunt regressions", () => {
+  const ordered = (tokens) => tokens.every((t, k) => k === 0 || t.s >= tokens[k - 1].e);
+
+  it("keeps tokens in order for an unterminated quote with an escape", () => {
+    expect(ordered(tokenize('echo "a\nb'))).toBe(true);
+  });
+
+  it("marks only a stray closer inside a placeholder", () => {
+    const tokens = tokenize("echo {a ) b}");
+    const errors = tokens.filter((t) => t.t === "error");
+    expect(errors).toEqual([{ t: "error", s: 8, e: 9 }]);
+    expect(tokens.some((t) => t.t === "ph.close")).toBe(true);
+  });
+});

@@ -47,3 +47,14 @@ describe("the cursor", () => {
     expect(at("echo hi > cha‸").kind).toBe("none"); // `>` is a plain word since 2.0
   });
 });
+
+describe("bug-hunt regressions", () => {
+  it("is not inside a placeholder at position 0", () => {
+    expect(where("{x}", 0).kind).not.toBe("root");
+    expect(where("{x}", 0).kind).toBe("command");
+  });
+
+  it("names a command after leading whitespace", () => {
+    expect(at("  ec‸").kind).toBe("command");
+  });
+});

@@ -155,6 +155,7 @@ def preflight(
     outcome = Preflight(ok=True)
     counted = 0
     costs: dict[str, int] = {}  # a custom command's invocations, counted once per expansion of its body
+    expanded: dict[str, tuple[bool, int]] = {}  # (inside a branch, nesting depth) a body was checked at
 
     def fail(index: int | None, name: str | None, result: Result) -> Preflight:
         return Preflight(False, outcome.resolved, outcome.bodies, result, index, name)
@@ -278,8 +279,12 @@ def preflight(
             ),
         )
         resolved_map = outcome.bodies.setdefault(target.command_id, {})
-        if resolved_map:  # already expanded through another invocation of the same command
+        seen = expanded.get(target.command_id)
+        # Reuse an earlier expansion only if it was checked at least as strictly: not deferring refusals
+        # (outside a branch) and no shallower, or its depth and refusal checks would be skipped here.
+        if seen is not None and (branch or not seen[0]) and len(stack) <= seen[1]:
             return count(costs.get(target.command_id, 0))
+        expanded[target.command_id] = (branch, len(stack))
         before = counted
         failure = walk(
             target.body,

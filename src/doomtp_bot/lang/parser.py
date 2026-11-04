@@ -92,7 +92,7 @@ OPERATOR_TOKENS = ("||", "|", "&&", "-->", "->", "(", ")", ";")
 # Inside an expression, longest first.
 _COMPARE_OPS = ("==", "!=", "<=", ">=", "<", ">")
 _UNKNOWN_OP = re.compile(r"\*\*|>>|<<|&&|\|\||\||&|\^|~|!(?!=)|=")
-_NUMBER = re.compile(r"(\d+)(\.\d+)?([eE][+-]?\d+)?")
+_NUMBER = re.compile(r"([0-9]+)(\.[0-9]+)?([eE][+-]?[0-9]+)?")
 _KEYWORDS = frozenset({"true", "false", "not", "and", "or", "in"})
 # Spec §2.1 step 1: invisible padding stripped from both ends of chat messages.
 INVISIBLE_PADDING = frozenset({"\U000e0000", "\u200b", "\u200c", "\u200d", "\u2060", "\ufeff"})
@@ -891,7 +891,7 @@ class _Parser:
 
     def _old_result_ref(self, start: int) -> None:
         """Typed lines only, for one release: `{1}` and `{1.x}` were result refs before syntax 2.0."""
-        m = re.compile(r"\s*([1-9]\d*)((?:\.\w+)*)\s*(\?\?|\})").match(self.s, self.pos)
+        m = re.compile(r"\s*([1-9][0-9]*)((?:\.\w+)*)\s*(\?\?|\})").match(self.s, self.pos)
         if m is None:
             return
         n, path = m.group(1), [p for p in m.group(2).split(".") if p]
@@ -1141,7 +1141,7 @@ class _Parser:
             self.opt_ws()
             key: Expr | None = None
             m = re.compile(r"([A-Za-z_]\w*)\s*\]").match(self.s, self.pos)
-            if m is not None and not re.fullmatch(r"_\d*", m.group(1)):
+            if m is not None and not re.fullmatch(r"_[0-9]*", m.group(1)):
                 key = Lit(m.group(1))
                 self.pos += len(m.group(1))
             else:
@@ -1258,7 +1258,7 @@ class _Parser:
                     hint=f"${root} takes one field, e.g. {{${root}.name}}",
                 )
             return Ref("$" + root, (fields[0],))
-        if re.fullmatch(r"_([1-9]\d*)?", root):
+        if re.fullmatch(r"_([1-9][0-9]*)?", root):
             path = self._segments()
             if len(path) > 1 or (path and path[0] not in RESULT_FIELDS):
                 raise self._error(
@@ -1285,7 +1285,7 @@ class _Parser:
 
     def _arg_segment(self, start: int) -> str:
         """ArgSeg <- '.' (Digits ('+raw' / '+' &End)? / Ident)    `{arg.1+1}` is a sum, `{arg.2+}` the rest."""
-        m = re.compile(r"\.(?:(\d+)(\+raw(?!\w)|\+(?=[\s}:\])]|$))?|([A-Za-z_]\w*))").match(self.s, self.pos)
+        m = re.compile(r"\.(?:([0-9]+)(\+raw(?!\w)|\+(?=[\s}:\])]|$))?|([A-Za-z_]\w*))").match(self.s, self.pos)
         if m is None:
             raise self._error(ParseErrorCode.BAD_PLACEHOLDER, start, hint="arg needs a number or name: {arg.1}")
         self.pos = m.end()
