@@ -4,13 +4,12 @@ const cache = new Map(); // one fetch per page for the things that don't change 
 
 async function getJson(path) {
   if (!cache.has(path)) {
-    cache.set(
-      path,
-      fetch(path, { headers: { accept: "application/json" } }).then((r) => {
-        if (!r.ok) throw new Error(`${path} answered ${r.status}`);
-        return r.json();
-      }),
-    );
+    const request = fetch(path, { headers: { accept: "application/json" } }).then((r) => {
+      if (!r.ok) throw new Error(`${path} answered ${r.status}`);
+      return r.json();
+    });
+    cache.set(path, request);
+    request.catch(() => cache.delete(path)); // a failure is not remembered: the next keystroke retries
   }
   return cache.get(path);
 }

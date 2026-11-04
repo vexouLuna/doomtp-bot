@@ -81,7 +81,10 @@ async def _listing(ctx: CommandContext, link: str | None, how: str) -> Result:
         for c in registry.all()
         if c.spec.module not in HIDDEN_MODULES and policy.is_permitted(ctx.exec, c.spec)
     ]
-    custom = sorted(n for n, spec in (await _custom_specs(ctx)).items() if policy.is_permitted(ctx.exec, spec))
+    shadowed = {c.spec.name for c in registry.all()}  # a built-in wins the name, so the custom one can't be run
+    custom = sorted(
+        n for n, spec in (await _custom_specs(ctx)).items() if n not in shadowed and policy.is_permitted(ctx.exec, spec)
+    )
     data = {"builtin": builtins, "custom": custom, "link": link}
     if link:
         return Result.success(f"{how} {link}", data)

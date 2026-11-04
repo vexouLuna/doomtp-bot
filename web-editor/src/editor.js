@@ -94,12 +94,14 @@ class DoomtpEditor extends HTMLElement {
       this.show(null);
       return [];
     }
+    const ticket = (this.parsing = (this.parsing || 0) + 1);
     let answer;
     try {
       answer = await api.parse({ text, context: this.options.context, channel: this.options.channel });
     } catch {
       return []; // the bot is restarting, or the LAN blinked: colours stay, diagnostics wait
     }
+    if (ticket !== this.parsing) return []; // a newer edit asked meanwhile; its answer wins
     if (answer.not_a_command) {
       // The most common slip: chat takes a line without the sign as an ordinary message, so say so.
       const sign = this.options.prefix ? ` ${this.options.prefix}` : "";

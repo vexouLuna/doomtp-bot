@@ -23,7 +23,7 @@ import structlog
 
 from doomtp_bot.clock import now_ms
 from doomtp_bot.core.build import BUILD, BuildInfo
-from doomtp_bot.storage.db import Connection, fetch_one
+from doomtp_bot.storage.db import Connection, fetch_one, transaction
 
 log = structlog.get_logger(__name__)
 
@@ -55,26 +55,29 @@ class BotRuns:
         """Record this start and return the run before it, if there was one."""
         row = await fetch_one(self.conn, "SELECT version, alive_at FROM bot_runs ORDER BY id DESC LIMIT 1")
         now = self.clock()
-        created = await fetch_one(
-            self.conn,
-            "INSERT INTO bot_runs (version, release, commit, started_at, alive_at) VALUES (%s, %s, %s, %s, %s)"
-            " RETURNING id",
-            (self.build.version, self.build.release, self.build.commit, now, now),
-        )
+        async with transaction(self.conn):
+            created = await fetch_one(
+                self.conn,
+                "INSERT INTO bot_runs (version, release, commit, started_at, alive_at) VALUES (%s, %s, %s, %s, %s)"
+                " RETURNING id",
+                (self.build.version, self.build.release, self.build.commit, now, now),
+            )
         self.id = int(created["id"]) if created else None
         return LastRun(row["version"], int(row["alive_at"])) if row else None
 
     async def beat(self) -> None:
         if self.id is not None:
-            await self.conn.execute("UPDATE bot_runs SET alive_at = %s WHERE id = %s", (self.clock(), self.id))
+            async with transaction(self.conn):
+                await self.conn.execute("UPDATE bot_runs SET alive_at = %s WHERE id = %s", (self.clock(), self.id))
 
     async def end(self) -> None:
         await self.stop()
         if self.id is not None:
             now = self.clock()
-            await self.conn.execute(
-                "UPDATE bot_runs SET alive_at = %s, ended_at = %s WHERE id = %s", (now, now, self.id)
-            )
+            async with transaction(self.conn):
+                await self.conn.execute(
+                    "UPDATE bot_runs SET alive_at = %s, ended_at = %s WHERE id = %s", (now, now, self.id)
+                )
 
     def start(self) -> None:
         if self._task is None:

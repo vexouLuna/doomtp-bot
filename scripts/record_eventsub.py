@@ -75,6 +75,21 @@ WANTED: tuple[Recording, ...] = (
 )
 
 
+async def _receive(ws: aiohttp.ClientWebSocketResponse) -> Any:
+    """The next JSON message; a closed socket or an error frame is a clear failure, not a TypeError."""
+    while True:
+        frame = await asyncio.wait_for(ws.receive(), timeout=15)
+        if frame.type == aiohttp.WSMsgType.TEXT:
+            return json.loads(frame.data)
+        if frame.type in (
+            aiohttp.WSMsgType.CLOSE,
+            aiohttp.WSMsgType.CLOSING,
+            aiohttp.WSMsgType.CLOSED,
+            aiohttp.WSMsgType.ERROR,
+        ):
+            raise RuntimeError(f"the EventSub server closed the socket ({frame.type.name})")
+
+
 async def _record(ws: aiohttp.ClientWebSocketResponse, session: str, wanted: Recording, twitch: str) -> Any:
     """Trigger one event and return the notification the server pushes back."""
     trigger = await asyncio.create_subprocess_exec(
@@ -85,7 +100,7 @@ async def _record(ws: aiohttp.ClientWebSocketResponse, session: str, wanted: Rec
     if "✗" in said or ("✔" not in said and trigger.returncode != 0):
         raise RuntimeError(f"{wanted.type}: {said}")
     while True:  # keepalives arrive on the same socket
-        message = json.loads((await asyncio.wait_for(ws.receive(), timeout=15)).data)
+        message = await _receive(ws)
         if message["metadata"]["message_type"] == "notification":
             return message
 
@@ -115,7 +130,7 @@ async def _connect(http: aiohttp.ClientSession, port: int) -> aiohttp.ClientWebS
 async def record_all(port: int, twitch: str, out: Path) -> list[str]:
     written: list[str] = []
     async with aiohttp.ClientSession() as http, await _connect(http, port) as ws:
-        welcome = json.loads((await asyncio.wait_for(ws.receive(), timeout=15)).data)
+        welcome = await _receive(ws)
         session = welcome["payload"]["session"]["id"]
         for wanted in WANTED:
             message = await _record(ws, session, wanted, twitch)

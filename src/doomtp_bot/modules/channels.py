@@ -7,6 +7,7 @@ from vex_platform.actor import Actor as JobActor
 from doomtp_bot.channels.manager import ChannelBanned
 from doomtp_bot.clock import now_ms
 from doomtp_bot.history.jobs import GAPS, OPEN_STATES, BackfillJob, BackfillJobs, BackfillRefused
+from doomtp_bot.ints import ascii_int
 from doomtp_bot.modules._common import actor, rank, sign_of, user_arg
 from doomtp_bot.modules.services import service, services
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK, BROADCASTER_RANK
@@ -17,6 +18,8 @@ from doomtp_bot.runtime.spec import CommandSpec, Cooldown, Example, Param
 from doomtp_bot.runtime.values import ConversionError, convert
 
 MODULE = "core_admin"
+MAX_BACKFILL_S = 365 * 86400
+RANGE_ALIGN_MS = 60_000
 
 
 @command(
@@ -216,9 +219,10 @@ async def backfill_cmd(ctx: CommandContext, args: Args, stdin: Result | None) ->
             return Result.success(text, {"jobs": [gaps_job.to_json()]})
         if action == "cancel":
             job_id = args.get("job") or ""
-            if not job_id.isdigit():
+            job_number = ascii_int(job_id)
+            if job_number is None:
                 raise CommandError(f"usage: {ctx.channel.prefix}backfill cancel <job>")
-            cancelled = await queue.cancel(ctx.channel.id, int(job_id), actor=by)
+            cancelled = await queue.cancel(ctx.channel.id, job_number, actor=by)
             if cancelled is None:
                 return Result.failure(Code.FAIL, f"#{job_id} isn't queued or running here")
             if cancelled.state != "cancelled":  # still running: it stops before its next request
@@ -230,7 +234,10 @@ async def backfill_cmd(ctx: CommandContext, args: Args, stdin: Result | None) ->
             raise CommandError("expected on, off, gaps, queue, cancel <job>, or a duration like 6h") from None
         if seconds <= 0:
             raise CommandError("the duration must be more than 0")
-        now = now_ms()
+        if seconds > MAX_BACKFILL_S:
+            raise CommandError(f"the duration can be at most {MAX_BACKFILL_S // 86400}d")
+        # whole minutes, so asking for the same range twice dedupes
+        now = now_ms() // RANGE_ALIGN_MS * RANGE_ALIGN_MS
         job = await queue.queue_range(ctx.channel.id, now - seconds * 1000, now, requested_by, actor=by)
     except BackfillRefused as exc:
         return Result.failure(Code.FAIL, str(exc))
@@ -249,7 +256,7 @@ def _range_text(job: BackfillJob) -> str:
         length_text = f"{length}s"
     if job.kind == GAPS:
         return f"the gaps over {length_text}"
-    if job.to_ms >= job.requested_at - 1000:
+    if job.to_ms >= job.requested_at - RANGE_ALIGN_MS:
         return f"the last {length_text}"
     return f"{length_text} of chat"
 
