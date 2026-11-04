@@ -47,7 +47,7 @@ from doomtp_bot.lang.errors import ParseError
 from doomtp_bot.lang.parser import Context, parse_template
 from doomtp_bot.runtime import formats, ops
 from doomtp_bot.runtime.context import Args, CommandContext, ExecContext, Publisher, RunCancelled
-from doomtp_bot.runtime.ops import ExprError
+from doomtp_bot.runtime.ops import ExprError, as_number
 from doomtp_bot.runtime.result import (
     ERROR_CODES,
     MAX_DATA_BYTES,
@@ -539,7 +539,9 @@ class Executor:
                     return await self.template(value, ctx, scope, prev)
                 if name == "human":
                     return ops.human(value)
-                if name in formats.KINDS and name != "duration":  # `:duration` is the cast; `:human` formats
+                # ADR-0037 (amended): every `:kind` is `format <kind>`. Only `:duration` on text that isn't a
+                # number (`1h30m`) stays the cast that reads it into seconds.
+                if name in formats.KINDS and not (name == "duration" and as_number(value) is None):
                     return formats.apply(name, value, choices[0] if choices else None, ctx.channel.timezone, ctx.now())
                 try:
                     return await convert(value, name, choices=choices, resolve_user=ctx.resolve_user)

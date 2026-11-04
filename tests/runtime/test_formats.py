@@ -58,3 +58,41 @@ async def test_duration_stays_the_cast_and_human_formats_it() -> None:
     """`:duration` reads `1h30m` as seconds (the cast); `:human` is a duration's formatter."""
     r = await run(make_runtime(), "!echo 1h30m | echo {_:duration} {5400:human}")
     assert r.send == "5400 1h 30m"
+
+
+async def test_bot_uptime_duration_formats_through_echo() -> None:
+    """`{$bot.uptime:duration}` formats like `format duration`, with `/me` and the emoji intact."""
+    r = await run(make_runtime(), "!echo /me ❤️‍🩹 {$bot.uptime:duration}")
+    assert r.send is not None and r.send.startswith("/me ❤️‍🩹 ") and r.send.endswith("s")
+    assert not r.send.rsplit(" ", 1)[1].isdigit()
+
+
+@pytest.mark.parametrize("kind", formats.KINDS)
+@pytest.mark.parametrize(
+    ("value", "option"),
+    [
+        (MOMENT, "DD MMM HH:mm"),
+        (MOMENT, None),
+        (0.4567, "1"),
+        (64801, None),
+        (90061, "2"),
+        (22, None),
+    ],
+)
+async def test_every_accessor_matches_the_format_command(kind: str, value: float, option: str | None) -> None:
+    """`{x:kind(option)}` and `format kind x option` say the same, or fail the same way (ADR-0037 amendment)."""
+    if kind not in ("time", "number", "percent"):
+        option = None  # only these take an option; the parser rejects `:ago(x)`, the command ignores it
+    suffix = f"({option})" if option is not None else ""
+    pipe = await run(make_runtime(), f"!echo {{{value}:{kind}{suffix}}}")
+    command = await run(make_runtime(), f"!format {kind} {value} {option or ''}".strip())
+    assert pipe.result.code == command.result.code
+    if command.result.code == Code.OK:
+        assert pipe.send == command.send
+
+
+async def test_format_duration_reads_duration_text() -> None:
+    """`format duration 1h30m` reads the text as the `:duration` cast does (ADR-0037 amendment)."""
+    assert (await run(make_runtime(), "!format duration 1h30m")).send == "1h 30m"
+    assert (await run(make_runtime(), "!format duration 2h")).send == "2h"
+    assert (await run(make_runtime(), "!format duration soon")).result.code == ErrorCode.E_TYPE
