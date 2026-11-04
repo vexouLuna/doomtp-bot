@@ -124,7 +124,7 @@ _SOURCES = {
     "moderation": _Source(
         "moderation",
         "SELECT e.id, e.type, e.message_id, e.target_user_id, t.login AS target_login,"
-        " e.moderator_user_id, mo.login AS moderator_login, e.source, e.raw, e.raw_format, e.at"
+        " e.moderator_user_id, mo.login AS moderator_login, e.source, e.raw, e.raw_format, e.at, e.duration_s"
         " FROM mod_events e LEFT JOIN users t ON t.user_id = e.target_user_id"
         " LEFT JOIN users mo ON mo.user_id = e.moderator_user_id",
         "e",
@@ -296,7 +296,9 @@ def _notification(row: dict[str, Any]) -> dict[str, Any]:
 
 def _moderation(row: dict[str, Any]) -> dict[str, Any]:
     event = events.moderation(row["raw_format"], row["raw"])
-    duration = event.get("duration_s")
+    duration = row.get("duration_s")  # the column holds a length a backfill merged into a live row
+    if duration is None:
+        duration = event.get("duration_s")
     if duration is None:  # a backfilled timeout's length is IRC's `ban-duration`
         ban = (event.get("irc") or {}).get("ban-duration", "")
         duration = int(ban) if ban.isdigit() else None

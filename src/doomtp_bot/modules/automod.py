@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from doomtp_bot.channels.capabilities import MODERATE
+from doomtp_bot.ints import ascii_int
 from doomtp_bot.moderation.automod import ACTIONS, MAX_TIMEOUT_S
 from doomtp_bot.modules._common import actor, policy_of
 from doomtp_bot.modules.services import service
@@ -26,9 +27,10 @@ MIN_TIMEOUT_S = 1
 
 
 def _seconds(raw: str) -> int:
-    if not raw.isdigit() or not MIN_TIMEOUT_S <= int(raw) <= MAX_TIMEOUT_S:
+    seconds = ascii_int(raw)
+    if seconds is None or not MIN_TIMEOUT_S <= seconds <= MAX_TIMEOUT_S:
         raise CommandError(f"the timeout must be a whole number of seconds, 1–{MAX_TIMEOUT_S}")
-    return int(raw)
+    return seconds
 
 
 def _describe(action: str, seconds: int) -> str:

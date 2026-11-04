@@ -151,10 +151,11 @@ class ChannelFilter:
         entries = {entry.id: entry for entry, _, _ in self.blocking}
         out, at = [], 0
         for hit in sorted(hits, key=lambda h: h.start):
-            if hit.start < at:  # overlapping hits: the first already covered this stretch
+            if hit.end <= at:  # inside a stretch an earlier hit already covered
                 continue
-            out.append(text[at : hit.start])
-            out.append(_censored(text[hit.start : hit.end], entries[hit.entry_id]))
+            start = max(hit.start, at)  # an overlapping hit still covers what the first left over
+            out.append(text[at:start])
+            out.append(_censored(text[start : hit.end], entries[hit.entry_id]))
             at = hit.end
         out.append(text[at:])
         return "".join(out)

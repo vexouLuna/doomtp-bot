@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any
 
+from doomtp_bot.ints import ascii_int
 from doomtp_bot.modules._common import need, rank
 from doomtp_bot.modules.services import service
 from doomtp_bot.runtime.context import Args, CommandContext
@@ -138,8 +139,8 @@ def _listener(ctx: CommandContext, name: str) -> Trigger | None:
 
 def _entry_id(ctx: CommandContext, given: str, *, named: bool) -> int:
     """The id a `rm`/`on`/`off` names: its number, or for a listener its name."""
-    if given.isdigit():
-        return int(given)
+    if (number := ascii_int(given)) is not None:
+        return number
     if named:
         found = _listener(ctx, given.lower())
         if found is not None:
@@ -456,8 +457,9 @@ def timer_schedule(every: str, rest: str, usage: str) -> tuple[dict[str, Any], s
         schedule: dict[str, Any] = {"every_s": parse_every(every)}
     except TriggerError as exc:
         raise CommandError(str(exc)) from exc
-    expr_words: list[str] = []
-    for word in rest.strip().split():
+    expr = rest.strip()
+    while expr:  # options lead the expression; the first other word starts it, as typed
+        word, _, after = expr.partition(" ")
         lowered = word.lower()
         if lowered == "only_live":
             schedule["only_live"] = True
@@ -466,11 +468,11 @@ def timer_schedule(every: str, rest: str, usage: str) -> tuple[dict[str, Any], s
                 schedule["jitter_s"] = parse_every(word.split("=", 1)[1])
             except TriggerError as exc:
                 raise CommandError(str(exc)) from exc
-        elif lowered.startswith("min_lines=") and word.split("=", 1)[1].isdigit():
-            schedule["min_chat_lines"] = int(word.split("=", 1)[1])
+        elif lowered.startswith("min_lines=") and ascii_int(word.split("=", 1)[1]) is not None:
+            schedule["min_chat_lines"] = ascii_int(word.split("=", 1)[1])
         else:
-            expr_words.append(word)
-    expr = " ".join(expr_words)
+            break
+        expr = after.lstrip()
     if not expr:
         raise CommandError(f"usage: {usage}")
     return schedule, expr

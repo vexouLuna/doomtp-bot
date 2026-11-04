@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from doomtp_bot.ints import ascii_int
 from doomtp_bot.runtime import formats, ops
 from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command
@@ -50,8 +51,10 @@ async def true_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Res
 async def fail_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result:
     values = list(args.values)
     code: int = Code.FAIL
-    if values and values[0].lstrip("+").isdigit() and 1 <= int(values[0]) <= 99:
-        code = int(values.pop(0))
+    given = ascii_int(values[0], signed=True) if values else None
+    if given is not None and 1 <= given <= 99:
+        code = given
+        values.pop(0)
     message = " ".join(values) or None
     return Result.failure(code, message)
 
