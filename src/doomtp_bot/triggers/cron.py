@@ -21,6 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from doomtp_bot.ints import ascii_int
+
 FIELDS = ("minute", "hour", "day", "month", "weekday")
 RANGES = {"minute": (0, 59), "hour": (0, 23), "day": (1, 31), "month": (1, 12), "weekday": (0, 6)}
 NAMES = {
@@ -69,8 +71,8 @@ def parse_cron(text: str) -> Cron:
         day=values["day"],
         month=values["month"],
         weekday=values["weekday"],
-        restricted_day=parts[2] != "*",
-        restricted_weekday=parts[4] != "*",
+        restricted_day=not parts[2].startswith("*"),  # `*/2` is still a wildcard to cron's day-or-weekday rule
+        restricted_weekday=not parts[4].startswith("*"),
     )
 
 
@@ -102,28 +104,30 @@ def _field(name: str, part: str) -> frozenset[int]:
             last = _value(name, end_text, chunk) if end_text else first
             if last < first:
                 raise CronError(f"{chunk!r} counts backwards")
+        top = high + 1 if name == "weekday" else high  # a weekday may be 7: Sunday, like 0
+        if first < low or last > top:  # before range() builds anything: `0-999999999999` must not hang
+            raise CronError(f"{name} must be between {low} and {high}")
         found.update(range(first, last + 1, step))
-    if any(not low <= v <= high for v in found):  # a weekday 7 is already 0 (_value)
-        raise CronError(f"{name} must be between {low} and {high}")
+    if name == "weekday":
+        found = {v % 7 for v in found}
     return frozenset(found)
 
 
 def _step(text: str, chunk: str) -> int:
     if not text:
         return 1
-    if not text.isdigit() or int(text) < 1:
+    step = ascii_int(text)
+    if step is None or step < 1:
         raise CronError(f"{chunk!r} has a bad step; write it like */15")
-    return int(text)
+    return step
 
 
 def _value(name: str, text: str, chunk: str) -> int:
     named = NAMES.get(name, {}).get(text)
     if named is not None:
         return named
-    if text.isdigit():
-        value = int(text)
-        if name == "weekday" and value == 7:  # both 0 and 7 mean Sunday
-            return 0
+    value = ascii_int(text)
+    if value is not None:
         return value
     known = ", ".join(NAMES[name]) if name in NAMES else "a number"
     raise CronError(f"{chunk!r} isn't a {name}; use {known}")

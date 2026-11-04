@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import HTTPException, Request
 
+from doomtp_bot.storage.db import outside
+
 if TYPE_CHECKING:
     from doomtp_bot.api.keys import ApiKeyService
     from doomtp_bot.api.sessions import AdminAuth
@@ -49,7 +51,8 @@ def backfill(request: Request) -> BackfillJobs:
 
 
 def bot_db(request: Request) -> Connection:
-    return cast("Connection", required(request, "bot_db"))
+    """For the API's own reads: outside any transaction a bot task has open on the shared one (C99)."""
+    return outside(cast("Connection", required(request, "bot_db")))
 
 
 def capabilities(request: Request) -> CapabilityProbe:
@@ -61,7 +64,7 @@ def channels(request: Request) -> ChannelManager:
 
 
 def chatlog_db(request: Request) -> Connection:
-    return cast("Connection", required(request, "chatlog_db"))
+    return outside(cast("Connection", required(request, "chatlog_db")))
 
 
 def customcmds(request: Request) -> CustomCommandService:

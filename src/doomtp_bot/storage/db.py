@@ -11,6 +11,14 @@ this build's head.
 Connections are `autocommit=True`: a read should not leave a transaction open. Writes take an explicit
 `transaction()` block, which serializes on a per-connection lock because every writer in the process
 shares one connection. A pool belongs with the second process (ADR-0014), not here.
+
+A statement sent on that shared connection while another task holds its lock runs inside that task's
+open transaction: it sees the uncommitted rows, and is rolled back with them. Each schema therefore
+has a second autocommit connection, `outside(conn)`, that no transaction ever holds (C99). The shared
+connection sends a read there itself unless the task sending it is inside its own `transaction()`
+(`SharedConnection`), so a read sees only committed rows, whoever else is mid-transaction. A write
+always stays on the shared connection, outside a transaction too: it can't commit past a transaction
+that holds the rows it touches, so nothing waits on a lock another task holds.
 """
 
 from __future__ import annotations
@@ -21,6 +29,7 @@ import sys
 import weakref
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
@@ -56,7 +65,7 @@ async def connect(dsn: str, schema: str) -> Connection:
         # Interpolated into SQL below: it comes from our own package layout, never from input, and this
         # keeps it that way.
         raise ValueError(f"not a usable schema name: {schema!r}")
-    conn: Connection = await psycopg.AsyncConnection.connect(dsn, autocommit=True, row_factory=dict_row)
+    conn: Connection = await SharedConnection.connect(dsn, autocommit=True, row_factory=dict_row)
     await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
     await conn.execute(f'SET search_path TO "{schema}", public')
     return conn
@@ -73,25 +82,65 @@ def write_lock(conn: Connection) -> asyncio.Lock:
     return lock
 
 
+_OUTSIDE: weakref.WeakKeyDictionary[Connection, Connection] = weakref.WeakKeyDictionary()
+
+
+#: The connections whose `transaction()` the current task (or one it started inside it) is in.
+_HOLDING: ContextVar[tuple[Connection, ...]] = ContextVar("holding", default=())
+
+
+def outside(conn: Connection) -> Connection:
+    """The connection paired with `conn` by `Databases.open` that no transaction() ever holds, or `conn`
+    itself when it has none (a test's bare connection)."""
+    return _OUTSIDE.get(conn, conn)
+
+
+#: A statement that only reads: SELECT or WITH, naming no write. A false "no" keeps it where it was.
+_READ = re.compile(r"\s*(SELECT|WITH)\b(?!.*\b(INSERT|UPDATE|DELETE|MERGE)\b)", re.IGNORECASE | re.DOTALL)
+
+
+class SharedConnection(psycopg.AsyncConnection[dict[str, Any]]):
+    """The connection every writer shares. A read from a task that isn't inside this connection's
+    `transaction()` goes to `outside(self)` instead, so it can't see another task's open one. Writes
+    stay here.
+
+    The `fetch_*` helpers and `execute()` below all go through this method, so it routes them.
+    """
+
+    async def execute(self, query: Any, *args: Any, **kwargs: Any) -> Any:
+        other = _OUTSIDE.get(self)
+        if (
+            other is not None
+            and isinstance(query, str)
+            and _READ.match(query)
+            and not any(held is self for held in _HOLDING.get())
+        ):
+            return await other.execute(query, *args, **kwargs)
+        return await super().execute(query, *args, **kwargs)
+
+
 @asynccontextmanager
 async def transaction(conn: Connection) -> AsyncIterator[Connection]:
     """Serialized write transaction: commit on success, roll back on any exception.
 
     Don't nest these on the same connection — the lock is not reentrant.
     """
-    async with write_lock(conn), conn.transaction():
-        yield conn
+    async with write_lock(conn):
+        token = _HOLDING.set((*_HOLDING.get(), conn))
+        try:
+            async with conn.transaction():
+                yield conn
+        finally:
+            _HOLDING.reset(token)
 
 
 async def fetch_all(conn: Connection, sql: str, params: Params = ()) -> list[Row]:
-    async with conn.cursor() as cur:
-        await cur.execute(sql, params)
+    async with await conn.execute(sql, params) as cur:
         return await cur.fetchall()
 
 
 async def fetch_one(conn: Connection, sql: str, params: Params = ()) -> Row | None:
-    async with conn.cursor() as cur:
-        await cur.execute(sql, params)
+    async with await conn.execute(sql, params) as cur:
         return await cur.fetchone()
 
 
@@ -103,8 +152,7 @@ async def fetch_value(conn: Connection, sql: str, params: Params = ()) -> Any:
 
 async def execute(conn: Connection, sql: str, params: Params = ()) -> int:
     """Run a statement and return the number of rows it touched."""
-    async with conn.cursor() as cur:
-        await cur.execute(sql, params)
+    async with await conn.execute(sql, params) as cur:
         return cur.rowcount
 
 
@@ -139,22 +187,28 @@ class Databases:
     chatlog: Connection
 
     @classmethod
-    async def open(cls, dsn: str, *, migrate: bool = False) -> Databases:
+    async def open(cls, dsn: str, *, migrate: bool = False, pair: bool = True) -> Databases:
         """Connect to both schemas and check them. `migrate` upgrades them first: tests and dev tools
-        only, since a deployed bot leaves that to the migrate step (ADR-0022)."""
+        only, since a deployed bot leaves that to the migrate step (ADR-0022). `pair=False` skips the
+        `outside` connections, for tests whose data lives in one transaction that only `bot` can see."""
         if migrate:
             await asyncio.to_thread(schema_module.upgrade, dsn)
-        bot = await connect(dsn, "bot")
-        chatlog = await connect(dsn, "chatlog")
+        opened: list[Connection] = []
         try:
-            await check_schema(bot, "bot")
-            await check_schema(chatlog, "chatlog")
+            for schema in ("bot", "chatlog"):
+                opened.append(await connect(dsn, schema))
+                await check_schema(opened[-1], schema)
+                if pair:
+                    _OUTSIDE[opened[-1]] = await connect(dsn, schema)
         except BaseException:
-            await bot.close()
-            await chatlog.close()
+            for conn in opened:
+                await outside(conn).close()
+                await conn.close()
             raise
-        return cls(bot=bot, chatlog=chatlog)
+        return cls(bot=opened[0], chatlog=opened[1])
 
     async def close(self) -> None:
-        await self.bot.close()
-        await self.chatlog.close()
+        for conn in (self.bot, self.chatlog):
+            if (other := outside(conn)) is not conn:
+                await other.close()
+            await conn.close()

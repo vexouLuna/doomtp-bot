@@ -20,6 +20,7 @@ Writes are audited as the caller: `via="api"`, or `via="web"` with the user's id
 from __future__ import annotations
 
 from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -44,6 +45,7 @@ from doomtp_bot.customcmds.params import to_params
 from doomtp_bot.customcmds.resolution import MODULE as CUSTOM_MODULE
 from doomtp_bot.customcmds.resolution import is_custom, published_specs, returns, system_specs
 from doomtp_bot.customcmds.service import CustomCommandService
+from doomtp_bot.modules.core_admin import validate_prefix
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK, GLOBAL
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.policy.settings import CHANNEL_SETTINGS
@@ -226,6 +228,15 @@ async def join_own_channel(request: Request, caller: Caller = PERSONAL_WRITE) ->
     return {"login": login, "channel_id": caller.user_id, "failed_subscriptions": failed}
 
 
+def _known_zone(name: str) -> bool:
+    """An IANA name like Europe/Berlin or UTC."""
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return False
+    return True
+
+
 @router.patch("/channels/{login}", response_model=ChannelJson)
 async def patch_channel(request: Request, login: str, body: ChannelPatch, caller: Caller = WRITE) -> dict[str, Any]:
     settings = _channel(request, login)
@@ -239,6 +250,20 @@ async def patch_channel(request: Request, login: str, body: ChannelPatch, caller
     if refused:
         who = RANK_NAMES.get(max(CHANNEL_SETTINGS[k] for k in refused), "an admin")
         raise HTTPException(status_code=403, detail=f"only {who} can change {', '.join(refused)}")
+    # Checked before anything is written, so a bad field refuses the whole patch as a 400.
+    nulls = sorted(k for k, v in changes.items() if v is None)
+    if nulls:
+        raise HTTPException(status_code=400, detail=f"{', '.join(nulls)} can't be null")
+    if "prefix" in changes and (problem := validate_prefix(changes["prefix"])):
+        raise HTTPException(status_code=400, detail=problem)
+    if "timezone" in changes and not _known_zone(changes["timezone"]):
+        # Read with a fallback to UTC everywhere (formats, timers), so a typo would go unnoticed.
+        raise HTTPException(status_code=400, detail=f"no timezone named {changes['timezone']}; use an IANA name")
+    unknown = sorted(
+        {v for k, v in changes.items() if k.endswith("_role") and policy.rank_of(settings.channel_id, v) is None}
+    )
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"no role named {', '.join(unknown)}")
 
     async def write(repo: Any) -> None:
         for column, value in changes.items():

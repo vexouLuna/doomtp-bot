@@ -136,11 +136,14 @@ def cheer(payload: Any) -> ChatNotification:
     """twitchio.ChannelCheer → ChatNotification(type="cheer"). Full tier (ADR-0007)."""
     anonymous = bool(getattr(payload, "anonymous", False))
     user = None if anonymous else payload.user
-    at = _ms(getattr(payload, "timestamp", None))
+    stamp = getattr(payload, "timestamp", None)
+    at = _ms(stamp)
+    # No payload timestamp: key on the minute received, so a redelivery lands on the same id.
+    keyed_at = at if stamp is not None else at // 60_000
     bits = int(getattr(payload, "bits", 0) or 0)
     who = "someone" if user is None else (user.display_name or user.name)
     return ChatNotification(
-        id=f"cheer:{payload.broadcaster.id}:{at}:{bits}",
+        id=f"cheer:{payload.broadcaster.id}:{'' if user is None else user.id}:{keyed_at}:{bits}",
         channel_id=payload.broadcaster.id,
         user_id=None if user is None else user.id,
         type="cheer",

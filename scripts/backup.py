@@ -19,12 +19,14 @@ machine. Getting them off the box is still the operator's job (README, "Deployin
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 from doomtp_bot.config import Settings
 
@@ -47,6 +49,18 @@ def timestamp(now: datetime | None = None) -> str:
     return (now or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _without_password(dsn: str) -> tuple[str, str | None]:
+    """The DSN minus its password, and the password: argv shows in the process list, the environment doesn't."""
+    parts = urlsplit(dsn)
+    if parts.password is None:
+        return dsn, None
+    host = parts.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    netloc = f"{quote(unquote(parts.username or ''), safe='')}@{host}" + (f":{parts.port}" if parts.port else "")
+    return urlunsplit(parts._replace(netloc=netloc)), unquote(parts.password)
+
+
 def backup_schema(dsn: str, name: str, out_dir: Path, *, stamp: str | None = None) -> Path:
     """Write one of the `DUMPS` into `out_dir`. Returns the file written."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -56,12 +70,15 @@ def backup_schema(dsn: str, name: str, out_dir: Path, *, stamp: str | None = Non
         raise BackupError("pg_dump is not installed")
     # --format=custom so pg_restore can pick pieces out of it, and compresses on the way; a partial
     # file from a failed run is removed rather than left looking like a backup.
+    dsn, password = _without_password(dsn)
+    env = {**os.environ, "PGPASSWORD": password} if password is not None else None
     result = subprocess.run(
         [pg_dump, "--dbname", dsn, *DUMPS[name], "--format", "custom",
          "--compress", "6", "--file", str(target)],
         capture_output=True,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )  # fmt: skip
     if result.returncode != 0:
         target.unlink(missing_ok=True)
@@ -72,7 +89,8 @@ def backup_schema(dsn: str, name: str, out_dir: Path, *, stamp: str | None = Non
 def rotate(out_dir: Path, name: str, keep: int) -> list[Path]:
     """Delete all but the newest `keep` backups of one dump. Returns what was removed."""
     existing = sorted(out_dir.glob(f"{name}-*{SUFFIX}"))  # timestamps sort chronologically
-    stale = existing[: max(0, len(existing) - keep)] if keep >= 0 else []
+    keep = max(keep, 1)  # the dump just written is the newest; `--keep 0` must not delete it
+    stale = existing[: max(0, len(existing) - keep)]
     for path in stale:
         path.unlink()
     return stale

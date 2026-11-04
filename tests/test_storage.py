@@ -1,7 +1,18 @@
 import asyncio
 
+import pytest
+
 from doomtp_bot.storage import schema
-from doomtp_bot.storage.db import Databases, execute, fetch_all, fetch_value, schema_revision, transaction
+from doomtp_bot.storage.db import (
+    _READ,
+    Databases,
+    execute,
+    fetch_all,
+    fetch_value,
+    outside,
+    schema_revision,
+    transaction,
+)
 
 
 async def test_both_schemas_are_at_this_builds_head(dbs: Databases) -> None:
@@ -89,3 +100,73 @@ async def test_transactions_sharing_a_connection_do_not_interleave(dbs: Database
     assert [type(r).__name__ for r in results] == ["NoneType"] * 3 + ["RuntimeError"] + ["NoneType"] * 2
     rows = await fetch_all(dbs.bot, "SELECT user_id FROM global_admins ORDER BY user_id")
     assert [r["user_id"] for r in rows] == ["0", "1", "2", "4", "5"]
+
+
+async def test_the_outside_connection_never_joins_another_tasks_transaction(database_url: str) -> None:
+    """C99: an API read sent while a bot task holds the shared connection's transaction saw its rows."""
+    databases = await Databases.open(database_url)
+    try:
+        assert outside(databases.bot) is not databases.bot
+        with pytest.raises(RuntimeError):
+            async with transaction(databases.bot):
+                await execute(
+                    databases.bot,
+                    "INSERT INTO global_admins (user_id, user_login, granted_by, granted_at) VALUES ('c99', 'x', 'system', 0)",
+                )
+                seen = await fetch_value(
+                    outside(databases.bot), "SELECT count(*) FROM global_admins WHERE user_id = 'c99'"
+                )
+                assert seen == 0  # uncommitted: not visible outside
+                raise RuntimeError("roll back")
+    finally:
+        await databases.close()
+
+
+async def test_the_shared_connection_routes_what_other_tasks_read_outside(database_url: str) -> None:
+    """A task inside transaction() sees its own rows; every other task, the services included, only reads
+    what is committed. A write outside a transaction stays on the shared connection (bot-api-3), so it
+    lands in the open transaction and is rolled back with it."""
+    databases = await Databases.open(database_url)
+    count = "SELECT count(*) FROM global_admins WHERE user_id LIKE 'route%%'"
+    insert = "INSERT INTO global_admins (user_id, user_login, granted_by, granted_at) VALUES (%s, 'x', 'system', 0)"
+    inside, done = asyncio.Event(), asyncio.Event()
+
+    async def writer() -> None:
+        with pytest.raises(RuntimeError):
+            async with transaction(databases.bot):
+                await execute(databases.bot, insert, ("route-a",))
+                assert await fetch_value(databases.bot, count) == 1  # its own row
+                child = asyncio.create_task(fetch_value(databases.bot, count))  # started inside: inside too
+                assert await child == 1
+                inside.set()
+                await done.wait()
+                raise RuntimeError("roll back")
+
+    async def other() -> None:
+        await inside.wait()
+        assert await fetch_value(databases.bot, count) == 0  # not committed: not visible
+        await execute(databases.bot, insert, ("route-b",))  # not a read: stays on the shared connection
+        done.set()
+
+    try:
+        await asyncio.gather(writer(), other())
+        assert await fetch_value(databases.bot, count) == 0  # route-b went with the rollback
+    finally:
+        await execute(databases.bot, "DELETE FROM global_admins WHERE user_id LIKE 'route%%'")
+        await databases.close()
+
+
+@pytest.mark.parametrize(
+    ("sql", "read"),
+    [
+        ("SELECT 1", True),
+        ("  select * FROM t WHERE status <> 'deleted'", True),
+        ("WITH x AS (SELECT 1) SELECT * FROM x", True),
+        ("INSERT INTO t VALUES (1) RETURNING id", False),
+        ("UPDATE t SET a = 1", False),
+        ("WITH gone AS (DELETE FROM t RETURNING id) SELECT count(*) FROM gone", False),
+        ("SELECT * FROM t FOR UPDATE", False),
+    ],
+)
+def test_only_reads_are_routed_outside(sql: str, read: bool) -> None:
+    assert bool(_READ.match(sql)) is read

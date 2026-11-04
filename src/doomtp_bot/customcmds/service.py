@@ -26,7 +26,7 @@ from doomtp_bot.lang.errors import ParseError
 from doomtp_bot.lang.parser import Context, ParserParams, parse
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.runtime.result import CommandError, to_json
-from doomtp_bot.storage.db import Connection, Row, fetch_one, transaction
+from doomtp_bot.storage.db import Connection, Row, fetch_one, fetch_value, transaction
 
 if TYPE_CHECKING:
     from doomtp_bot.filters.service import FilterService
@@ -287,12 +287,14 @@ class CustomCommandService:
         if name in FORM_NAMES:
             raise CustomCommandError(f"{name} is part of the command language")
         self.check_body(body, name, channel_id=channel_id, prefix=prefix)
-        if await self.by_owner(owner_user_id, name) is not None:
-            raise CustomCommandError(f"you already have a command named {name}")
-        if await self.count_owned(owner_user_id) >= self.quota:
-            raise CustomCommandError(f"you've reached the limit of {self.quota} commands")
         command_id, ts = new_id(), now_ms()
-        async with transaction(self.conn):
+        async with transaction(self.conn):  # checked under the write lock, so two creates can't both pass
+            if await self.by_owner(owner_user_id, name) is not None:
+                raise CustomCommandError(f"you already have a command named {name}")
+            if await self.count_owned(owner_user_id) >= self.quota:
+                raise CustomCommandError(f"you've reached the limit of {self.quota} commands")
+            if await self._alias_taken(owner_user_id, name):  # the command's own alias is its name
+                raise CustomCommandError(f"you already have an alias named {name}; {name} would replace it")
             await self.conn.execute(
                 "INSERT INTO custom_commands (id, owner_user_id, owner_login, name, current_version,"
                 " created_at, updated_at) VALUES (%s, %s, %s, %s, 1, %s, %s)",
@@ -316,8 +318,11 @@ class CustomCommandService:
         return await self._new_version(command, body, actor_via)
 
     async def _new_version(self, command: CustomCommand, body: str, actor_via: str) -> CustomCommand:
-        version = command.version + 1
         async with transaction(self.conn):
+            # Read under the write lock: `command` may be stale if another edit landed since it was loaded.
+            version = 1 + await fetch_value(
+                self.conn, "SELECT current_version FROM custom_commands WHERE id = %s", (command.id,)
+            )
             await self._add_version(command.id, version, body)
             await self.conn.execute(
                 "UPDATE custom_commands SET current_version = %s, updated_at = %s WHERE id = %s",
@@ -330,7 +335,10 @@ class CustomCommandService:
         assert updated is not None
         return updated
 
-    async def revert(self, command: CustomCommand, version: int, *, actor_via: str = "chat") -> CustomCommand:
+    async def revert(
+        self, command: CustomCommand, version: int, *, channel_id: str, prefix: str, actor_via: str = "chat"
+    ) -> CustomCommand:
+        """The old body as a new version, checked again: the filter or the language may have changed."""
         row = await fetch_one(
             self.conn,
             "SELECT body FROM custom_command_versions WHERE command_id = %s AND version = %s",
@@ -338,7 +346,8 @@ class CustomCommandService:
         )
         if row is None:
             raise CustomCommandError(f"{command.name} has no version {version}")
-        return await self._new_version(command, row["body"], actor_via)  # checked when it was stored
+        self.check_body(row["body"], channel_id=channel_id, prefix=prefix)
+        return await self._new_version(command, row["body"], actor_via)
 
     async def delete(self, command: CustomCommand, *, actor_via: str = "chat") -> tuple[int, int]:
         """Soft delete. Links and publications stop working at once; returns what was affected."""
@@ -353,6 +362,8 @@ class CustomCommandService:
                 (command.id,),
             )
             await self.conn.execute("DELETE FROM publication_write_grants WHERE command_id = %s", (command.id,))
+            # They stopped working already; deleting them frees the aliases, the owner's name among them.
+            await self.conn.execute("DELETE FROM custom_command_links WHERE command_id = %s", (command.id,))
             await self._audit(actor_via, command.owner_user_id, "cc.delete", command.id, command.name, None)
         await self._grants_changed()
         return affected
@@ -392,14 +403,23 @@ class CustomCommandService:
             raise CustomCommandError("aliases: lowercase letters, digits, _ and -, up to 32, not only digits")
         if alias in FORM_NAMES:
             raise CustomCommandError(f"{alias} is part of the command language")
-        if await self.personal(user_id, alias) is not None:
-            raise CustomCommandError(f"you already have an alias named {alias}")
         async with transaction(self.conn):
+            if await self._alias_taken(user_id, alias):
+                raise CustomCommandError(f"you already have an alias named {alias}")
             await self.conn.execute(
                 "INSERT INTO custom_command_links (user_id, alias, command_id, created_at) VALUES (%s, %s, %s, %s)",
                 (user_id, alias, command.id, now_ms()),
             )
             await self._audit(actor_via, user_id, "cc.link", command.id, None, {"alias": alias})
+
+    async def _alias_taken(self, user_id: str, alias: str) -> bool:
+        """Any link row holds the alias, whatever state its command is in: the key is (user, alias)."""
+        return (
+            await fetch_one(
+                self.conn, "SELECT 1 FROM custom_command_links WHERE user_id = %s AND alias = %s", (user_id, alias)
+            )
+            is not None
+        )
 
     async def unlink(self, *, user_id: str, alias: str, actor_via: str = "chat") -> bool:
         async with transaction(self.conn):

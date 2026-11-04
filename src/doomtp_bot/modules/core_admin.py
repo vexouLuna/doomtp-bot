@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from doomtp_bot.customcmds.packs import custom_modules
 from doomtp_bot.customcmds.resolution import MODULE as CUSTOM_MODULE
+from doomtp_bot.ints import ascii_int
 from doomtp_bot.lang import SYNTAX_VERSION
 from doomtp_bot.lang.errors import ParseError
 from doomtp_bot.lang.parser import DEFAULT_PREFIX, Context, parse, parse_template
@@ -89,9 +90,10 @@ def _handler(fn: Any) -> Any:
 
 
 def _int(raw: str, what: str, lo: int, hi: int) -> int:
-    if not raw.lstrip("-").isdigit() or not lo <= int(raw) <= hi:
+    number = ascii_int(raw, signed=True)
+    if number is None or not lo <= number <= hi:
         raise CommandError(f"{what} must be a whole number from {lo} to {hi}")
-    return int(raw)
+    return number
 
 
 # ── !role ───────────────────────────────────────────────────────────────────
@@ -378,6 +380,9 @@ async def _ignore(ctx: CommandContext, v: list[str], args: Args) -> Result:
     if action not in ("add", "remove"):
         raise CommandError(f"usage: {IGNORE_USAGE}")
     user, scope = await user_arg(ctx, v[1]), _scope(ctx, v, 2)
+    # Rank known without badges: the broadcaster, custom roles, bot admins. A peer's chat badge isn't stored.
+    if policy.build_chatter(ctx.channel.id, user["id"], user["name"]).rank >= rank(ctx):
+        raise CommandError("you can only manage the ignore list for people ranked below you", Code.DENIED)
     await _write(
         ctx,
         lambda repo: repo.set_ignored(scope, user["id"], user["name"], action == "add", actor(ctx)),
@@ -442,7 +447,7 @@ def _show_limit(limit: LimitField, value: int) -> str:
 
 
 def _parse_limit(limit: LimitField, text: str) -> int:
-    value = parse_size(text) if limit.bytes else (int(text) if text.isdigit() else None)
+    value = parse_size(text) if limit.bytes else ascii_int(text)
     if value is None or value > limit.ceiling:
         example = "a size like 512KB or 1MB" if limit.bytes else "a whole number"
         raise CommandError(f"{limit.label} must be {example}, at most {_show_limit(limit, limit.ceiling)}")
@@ -526,9 +531,14 @@ async def _admin_http(ctx: CommandContext, v: list[str]) -> Result:
                 f"{limits.channel_per_minute}/min per channel, {limits.host_per_minute}/min per host",
                 limits.as_dict(),
             )
-        if action == "limit" and len(rest) == 2 and rest[0].lower() in ("channel", "host") and rest[1].isdigit():
+        if (
+            action == "limit"
+            and len(rest) == 2
+            and rest[0].lower() in ("channel", "host")
+            and ascii_int(rest[1]) is not None
+        ):
             key = f"{rest[0].lower()}_per_minute"
-            limits = await hosts.set_limits(**{key: int(rest[1])}, actor=who.user_id, via=who.via)
+            limits = await hosts.set_limits(**{key: ascii_int(rest[1])}, actor=who.user_id, via=who.via)
             return Result.success(f"at most {getattr(limits, key)} a minute per {rest[0].lower()}")
     except HostError as exc:
         raise CommandError(str(exc)) from None

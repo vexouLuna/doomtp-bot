@@ -168,7 +168,7 @@ function quoted(text, i, push) {
       i += 1;
     }
   }
-  push("error", open, text.length); // unterminated: the rest of the line is the quote
+  push("error", run, text.length); // unterminated: the rest of the line is the quote (from `run`, so tokens stay in order)
   return text.length;
 }
 
@@ -188,7 +188,7 @@ function placeholder(text, i, push, depth) {
     }
   } else {
     const atEnd = (s, k, open) => open === 0 && (s[k] === "}" || s.startsWith("??", k));
-    i = expression(text, i, push, depth, atEnd).i;
+    i = expression(text, i, push, depth, atEnd, true).i;
     if (text.startsWith("??", i)) {
       push("ph.fallback", i, i + 2);
       i += 2;
@@ -221,7 +221,7 @@ function placeholder(text, i, push, depth) {
  * stop. Returns where it stopped, and whether it saw an operator (which is what makes `🏜1 + 3` a
  * calculation and `🏜100` not).
  */
-function expression(text, i, push, depth, atEnd) {
+function expression(text, i, push, depth, atEnd, strayIsError = false) {
   let open = 0;
   let operator = false;
   while (i < text.length) {
@@ -241,7 +241,12 @@ function expression(text, i, push, depth, atEnd) {
       i += 1;
       if (ch === "[") i = bareKey(text, i, push);
     } else if (ch === ")" || ch === "]") {
-      if (open === 0) break;
+      if (open === 0) {
+        if (!strayIsError) break;
+        push("error", i, i + 1); // a stray closer inside a placeholder is only that character
+        i += 1;
+        continue;
+      }
       push("ph.op", i, i + 1);
       open -= 1;
       i += 1;

@@ -171,9 +171,10 @@ async def login(request: Request, body: Login, response: Response) -> dict[str, 
             detail="too many failed logins; try again later",
             headers={"Retry-After": str(wait)},
         )
-    # scrypt takes tens of milliseconds by design; off the event loop, so chat keeps flowing meanwhile.
+    # Counted as failed before the check, so concurrent attempts can't all pass `retry_after` while
+    # scrypt runs; a success clears it below. scrypt is off the event loop, so chat keeps flowing.
+    limiter.failed(address)
     if not await asyncio.to_thread(auth.check_password, body.password):
-        limiter.failed(address)
         raise HTTPException(status_code=401, detail="wrong password")
     limiter.reset(address)
     auth.logout(request.cookies.get(SESSION_COOKIE))

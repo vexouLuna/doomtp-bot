@@ -21,7 +21,9 @@ from tests.test_api_data import (  # noqa: F401  (fixtures)
     CHANNEL_LOGIN,
     PASSWORD,
     app_and_keys,
+    auth,
     client,
+    write_key,
 )
 
 MOD_ID, OTHER_ID, OTHER_LOGIN = "300", "700", "elsewhere"
@@ -280,6 +282,40 @@ async def test_a_custom_role_raises_a_moderators_rank_as_in_chat(
     await policy.mutate(co_owner)
     assert (await client.get("/api/v1/session")).json()["channel_ranks"] == {CHANNEL_LOGIN: BROADCASTER_RANK}
     assert (await client.patch(own, json={"log_enabled": False}, headers=mod)).status_code == 200
+
+
+async def test_a_moderator_cannot_change_a_trigger_that_runs_above_them(
+    client: httpx.AsyncClient, write_key: str, mod: dict[str, str]
+) -> None:
+    triggers = f"/api/v1/channels/{CHANNEL_LOGIN}/triggers"
+    body = {"type": "cron", "expr": "echo hi", "schedule": {"cron": "0 18 * * fri"}}
+    high = (await client.post(triggers, json=body, headers=auth(write_key))).json()  # at the key's own rank
+    for change in ({"expr": "echo mine"}, {"cooldown_s": 5}, {"enabled": False}):
+        refused = await client.patch(f"{triggers}/{high['id']}", json=change, headers=mod)
+        assert refused.status_code == 403, change
+    low = (await client.post(triggers, json={**body, "run_as_rank": MODERATOR_RANK}, headers=auth(write_key))).json()
+    assert (await client.patch(f"{triggers}/{low['id']}", json={"expr": "echo mine"}, headers=mod)).status_code == 200
+    assert (await client.patch(f"{triggers}/999999", json={"expr": "x"}, headers=mod)).status_code == 404
+
+
+async def test_a_channel_patch_is_checked_before_anything_is_written(client: httpx.AsyncClient, write_key: str) -> None:
+    own = f"/api/v1/channels/{CHANNEL_LOGIN}"
+    for bad in ({"prefix": ""}, {"prefix": "a"}, {"prefix": "/x"}):
+        refused = await client.patch(own, json=bad, headers=auth(write_key))
+        assert refused.status_code == 400, bad
+    typo = await client.patch(own, json={"quiet_errors": True, "publish_min_role": "mod"}, headers=auth(write_key))
+    assert typo.status_code == 400 and typo.json()["detail"] == "no role named mod"
+    null = await client.patch(own, json={"quiet_errors": True, "prefix": None}, headers=auth(write_key))
+    assert null.status_code == 400 and null.json()["detail"] == "prefix can't be null"
+    after = (await client.get(own, headers=auth(write_key))).json()
+    assert after["quiet_errors"] is False and after["roles"]["publish_min"] == "moderator"  # nothing applied
+    for zone in ("Mars/Olympus", "../etc/passwd", ""):
+        refused = await client.patch(own, json={"timezone": zone}, headers=auth(write_key))
+        assert refused.status_code == 400 and "timezone" in refused.json()["detail"], zone
+    zoned = await client.patch(own, json={"timezone": "Europe/Berlin"}, headers=auth(write_key))
+    assert zoned.status_code == 200 and zoned.json()["timezone"] == "Europe/Berlin"
+    good = await client.patch(own, json={"prefix": "!!", "publish_min_role": "vip"}, headers=auth(write_key))
+    assert good.status_code == 200 and good.json()["prefix"] == "!!"
 
 
 @pytest.fixture
