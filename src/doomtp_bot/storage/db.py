@@ -11,6 +11,11 @@ this build's head.
 Connections are `autocommit=True`: a read should not leave a transaction open. Writes take an explicit
 `transaction()` block, which serializes on a per-connection lock because every writer in the process
 shares one connection. A pool belongs with the second process (ADR-0014), not here.
+
+A statement sent on that shared connection while another task holds its lock runs inside that task's
+open transaction: it sees the uncommitted rows, and is rolled back with them. Each schema therefore
+has a second autocommit connection, `outside(conn)`, for statements that must not join one: the API's
+own reads, and its `last_used_at` stamp (C99).
 """
 
 from __future__ import annotations
@@ -71,6 +76,15 @@ def write_lock(conn: Connection) -> asyncio.Lock:
     if lock is None:
         lock = _WRITE_LOCKS[conn] = asyncio.Lock()
     return lock
+
+
+_OUTSIDE: weakref.WeakKeyDictionary[Connection, Connection] = weakref.WeakKeyDictionary()
+
+
+def outside(conn: Connection) -> Connection:
+    """The connection paired with `conn` by `Databases.open` that no transaction() ever holds, or `conn`
+    itself when it has none (a test's bare connection)."""
+    return _OUTSIDE.get(conn, conn)
 
 
 @asynccontextmanager
@@ -139,22 +153,28 @@ class Databases:
     chatlog: Connection
 
     @classmethod
-    async def open(cls, dsn: str, *, migrate: bool = False) -> Databases:
+    async def open(cls, dsn: str, *, migrate: bool = False, pair: bool = True) -> Databases:
         """Connect to both schemas and check them. `migrate` upgrades them first: tests and dev tools
-        only, since a deployed bot leaves that to the migrate step (ADR-0022)."""
+        only, since a deployed bot leaves that to the migrate step (ADR-0022). `pair=False` skips the
+        `outside` connections, for tests whose data lives in one transaction that only `bot` can see."""
         if migrate:
             await asyncio.to_thread(schema_module.upgrade, dsn)
-        bot = await connect(dsn, "bot")
-        chatlog = await connect(dsn, "chatlog")
+        opened: list[Connection] = []
         try:
-            await check_schema(bot, "bot")
-            await check_schema(chatlog, "chatlog")
+            for schema in ("bot", "chatlog"):
+                opened.append(await connect(dsn, schema))
+                await check_schema(opened[-1], schema)
+                if pair:
+                    _OUTSIDE[opened[-1]] = await connect(dsn, schema)
         except BaseException:
-            await bot.close()
-            await chatlog.close()
+            for conn in opened:
+                await outside(conn).close()
+                await conn.close()
             raise
-        return cls(bot=bot, chatlog=chatlog)
+        return cls(bot=opened[0], chatlog=opened[1])
 
     async def close(self) -> None:
-        await self.bot.close()
-        await self.chatlog.close()
+        for conn in (self.bot, self.chatlog):
+            if (other := outside(conn)) is not conn:
+                await other.close()
+            await conn.close()

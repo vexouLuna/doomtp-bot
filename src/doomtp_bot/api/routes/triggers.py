@@ -128,6 +128,15 @@ async def patch_trigger(
     if not fields:
         raise HTTPException(status_code=400, detail="nothing to change")
     missing = HTTPException(status_code=404, detail=f"no trigger {trigger_id} here")
+    current = next((t for t in triggers.in_channel(settings.channel_id) if t.id == trigger_id), None)
+    if current is None:
+        raise missing
+    # Changing a trigger that runs above the caller would let them run their own expression at its rank.
+    rank = caller.rank_in(_policy(request), settings.login)
+    if current.run_as_rank > rank:
+        raise HTTPException(
+            status_code=403, detail=f"trigger {trigger_id} runs above your own rank ({rank}); you can't change it"
+        )
     if fields - {"enabled"}:
         run_as = None if body.run_as_rank is None else _run_as(request, caller, settings.login, body.run_as_rank)
         try:

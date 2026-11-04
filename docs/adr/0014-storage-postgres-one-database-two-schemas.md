@@ -1,6 +1,6 @@
 # ADR-0014: Storage — one Postgres database, two schemas
 
-**Status:** Accepted (implemented; see Action Items) — 2026-09-22
+**Status:** Accepted (implemented; see Action Items) — 2026-09-22, amended 2026-11-03
 **Date:** 2026-09-22
 **Deciders:** Project owner
 **Supersedes:** the decision in [ADR-0003](0003-storage-sqlite.md) (its data model and its split between state and log are kept)
@@ -105,6 +105,17 @@ The per-connection write lock from ADR-0003 stays for now. It is no longer load-
 is shared by every writer. The second writer will need row locks (`SELECT … FOR UPDATE`) in the few places
 that read-then-write; those places are marked in the code.
 
+*(2026-11-03, bug hunt C99)* The shared connection has a cost this paragraph missed: a transaction holds it
+across awaits, so a statement another task sends meanwhile runs **inside** that transaction. It sees the
+uncommitted rows and is rolled back with them. The API's reads and its `last_used_at` stamp did exactly
+that. Each schema now has a **second connection**, `storage.db.outside(conn)`: autocommit, opened and
+closed with the shared one by `Databases`, and never held by `transaction()`. The API's own statements use
+it; writers stay on the shared connection under the lock. It is one connection per schema, not a pool, so
+the read path is bounded at two extra connections for the process, and closing `Databases` at shutdown
+closes them too. The services' own reads (policy, triggers, variables, custom commands) still go through
+the shared connection, so a bot task can still read another's uncommitted rows. The pool below is still
+the fix for that.
+
 ## Consequences
 
 - **Easier:** a second writer, concurrent readers, querying the log from anything that speaks Postgres,
@@ -153,3 +164,5 @@ that read-then-write; those places are marked in the code.
     the guest takes `data/backups/` to another machine. One gap found: a `--schema` dump leaves out the
     `unaccent` extension that `chatlog.messages` needs, so restoring into an empty database has to create
     it first. The README says so.)*
+11. [x] Give the API a connection of its own per schema, outside the writers' transactions (C99).
+    *(2026-11-03)*

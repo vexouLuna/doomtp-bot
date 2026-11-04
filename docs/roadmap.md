@@ -26,7 +26,7 @@ as `ARCH-N`, and close the same way: build it, or change the architecture so it 
 | [0011](adr/0011-parser-and-web-editor.md) | One server-side PEG parser, a local highlighter | 6/6 | Complete |
 | [0012](adr/0012-derived-commands-and-packs.md) | Derived commands are global publications | 6/6 | Complete |
 | [0013](adr/0013-deploy-by-pulling-a-published-image.md) | CI publishes, the server pulls | 6/6 | Complete: proven on guest 221 |
-| [0014](adr/0014-storage-postgres-one-database-two-schemas.md) | Postgres: one database, two schemas | 10/10 | Complete: backup and restore proven on guest 221 |
+| [0014](adr/0014-storage-postgres-one-database-two-schemas.md) | Postgres: one database, two schemas | 11/11 | Complete: backup and restore proven on guest 221 |
 | [0015](adr/0015-metrics-prometheus-text-on-the-api.md) | Counters in Prometheus text on `/metrics` | 4/4 | Complete |
 | [0016](adr/0016-web-ui-as-a-separate-site-over-the-json-api.md) | The web UI moves to a separate site over the JSON API | 5/5 | Complete |
 | [0017](adr/0017-moderator-sessions-through-twitch-sign-in.md) | Moderator sessions through Twitch sign-in | 6/6 | Complete |

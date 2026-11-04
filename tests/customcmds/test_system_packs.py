@@ -82,7 +82,7 @@ async def test_only_members_can_be_made_internal(h: Harness) -> None:  # noqa: F
     await _blackjack(h)
     await h.say("alice", "!cc add stand echo standing")
     reply = await h.say("alice", "!cc pack internal blackjack stand on")
-    assert reply == "stand isn't in blackjack"
+    assert reply == "stand isn't in blackjack; nothing changed"
     usage = await h.say("alice", "!cc pack internal blackjack deal")
     assert usage is not None and "on|off" in usage
 

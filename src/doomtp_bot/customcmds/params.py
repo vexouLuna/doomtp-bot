@@ -9,7 +9,7 @@ from __future__ import annotations
 import shlex
 from typing import Any
 
-from doomtp_bot.runtime.spec import PARAM_TYPES, Param, validate_params
+from doomtp_bot.runtime.spec import _POSITION_RE, PARAM_TYPES, Param, validate_params
 
 FIELDS = ("name", "type", "required", "default", "min", "max", "max_len", "choices", "description")
 BOOLS = {"yes": True, "no": False, "true": True, "false": False, "on": True, "off": False}
@@ -24,7 +24,7 @@ def to_params(declared: Any) -> tuple[Param, ...]:
     so one bad row saved by an older version can't make a command unrunnable."""
     params: list[Param] = []
     for row in declared or ():
-        if not isinstance(row, dict) or "position" not in row or "name" not in row:
+        if not isinstance(row, dict) or "name" not in row or not _POSITION_RE.match(str(row.get("position"))):
             continue
         fields = {k: v for k, v in row.items() if k in (*FIELDS, "position")}
         if isinstance(fields.get("choices"), list):
@@ -48,7 +48,7 @@ def _value(key: str, raw: str) -> Any:
         except ValueError as exc:
             raise ParamError(f"{key} must be a number") from exc
     if key == "max_len":
-        if not raw.isdigit():
+        if not (raw.isascii() and raw.isdigit() and len(raw) <= 9):
             raise ParamError("max_len must be a whole number")
         return int(raw)
     if key == "required":
@@ -67,6 +67,8 @@ def declare(existing: Any, position: str, assignments: list[str], description: s
 
     Returns the new JSON-ready list. Raises ParamError with a user-facing message.
     """
+    if not _POSITION_RE.match(position):
+        raise ParamError("a position is 1, 2, 3… or N+ for the rest")
     fields: dict[str, Any] = {"position": position}
     for word in assignments:
         key, sep, raw = word.partition("=")
@@ -88,7 +90,17 @@ def declare(existing: Any, position: str, assignments: list[str], description: s
 
 
 def remove(existing: Any, position: str) -> list[dict[str, Any]]:
-    return [dict(r) for r in (existing or ()) if isinstance(r, dict) and r.get("position") != position]
+    """Drop the declaration at `position` and move the ones after it down, so positions stay 1, 2, 3…"""
+    kept = [r for r in (existing or ()) if isinstance(r, dict)]
+    rows = [dict(r) for r in kept if r.get("position") != position]
+    gone = _POSITION_RE.match(position)
+    if gone is None or len(rows) == len(kept):
+        return rows
+    for row in rows:
+        m = _POSITION_RE.match(str(row.get("position")))
+        if m and int(m.group(1)) > int(gone.group(1)):
+            row["position"] = f"{int(m.group(1)) - 1}{m.group(2) or ''}"
+    return rows
 
 
 def split_declaration(text: str) -> tuple[list[str], str]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -143,6 +144,12 @@ async def test_logins_are_rate_limited_per_address(client: httpx.AsyncClient, ap
         assert (await client.post("/api/v1/session", json={"password": "nope"})).status_code == 401
     refused = await client.post("/api/v1/session", json={"password": PASSWORD})
     assert refused.status_code == 429 and int(refused.headers["retry-after"]) > 0
+
+
+async def test_concurrent_logins_cannot_outrun_the_limit(client: httpx.AsyncClient, app: Any) -> None:
+    app.state.login_limiter = LoginLimiter(attempts=2)
+    tries = await asyncio.gather(*(client.post("/api/v1/session", json={"password": "nope"}) for _ in range(6)))
+    assert sorted(r.status_code for r in tries) == [401, 401, 429, 429, 429, 429]
 
 
 async def test_sessions_expire() -> None:
