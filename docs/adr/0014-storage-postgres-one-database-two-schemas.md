@@ -112,9 +112,13 @@ that. Each schema now has a **second connection**, `storage.db.outside(conn)`: a
 closed with the shared one by `Databases`, and never held by `transaction()`. The API's own statements use
 it; writers stay on the shared connection under the lock. It is one connection per schema, not a pool, so
 the read path is bounded at two extra connections for the process, and closing `Databases` at shutdown
-closes them too. The services' own reads (policy, triggers, variables, custom commands) still go through
-the shared connection, so a bot task can still read another's uncommitted rows. The pool below is still
-the fix for that.
+closes them too. *(2026-11-03, later)* The shared connection now does the routing itself
+(`SharedConnection`): a read from a task that isn't inside its own `transaction()` goes to the second
+connection, so the services' reads (policy, triggers, variables, custom commands) see only committed rows
+too. Writes stay on the shared connection, outside a transaction too, so a bare write still joins whatever
+transaction is open and is rolled back with it; moving writes would let one wait on row locks the open
+transaction holds. Statements inside a transaction, and tasks started inside one, stay on the shared
+connection. The pool below is still the step for a second process.
 
 ## Consequences
 
@@ -166,3 +170,5 @@ the fix for that.
     it first. The README says so.)*
 11. [x] Give the API a connection of its own per schema, outside the writers' transactions (C99).
     *(2026-11-03)*
+12. [x] Route every read sent outside a `transaction()` to that connection, the services' reads
+    included; writes stay on the shared connection. *(2026-11-03)*
