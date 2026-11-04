@@ -167,12 +167,21 @@ for formatting inside a placeholder.
 - `time` and `ago` take epoch seconds or ISO 8601 text, in the channel's timezone. Pattern tokens are
   Moment-style: `YYYY YY MM MMM MMMM DD D ddd dddd HH H hh mm ss A`, everything else literal; default
   `YYYY-MM-DD HH:mm`. Not strftime: `%` reads as a modulo to people who write expressions.
-- The accessors are the same, except for durations: `{x:time}`, `{x:time(DD MMM HH:mm)}`, `{x:ago}`,
+- The accessors are the same (but see the amendment below for `:duration`): `{x:time}`, `{x:time(DD MMM HH:mm)}`, `{x:ago}`,
   `{x:number(2)}`, `{x:percent(1)}`, `{x:ordinal}`. A pattern runs to the closing `)`. `:duration` was
   already the cast that reads `1h30m` as seconds, so it stays that, and a duration's formatter is the
-  existing `:human` (two units, `1h 30m`).
+  existing `:human` (two units, `1h 30m`). *(Amended below: `:duration` now formats numbers too.)*
 - `message` is the text and `data` the same text, so `-> channel.x` stores it.
 - A value that isn't a number or a time fails with 232 (`E_TYPE`).
+
+### Amendment: `{x:<kind>}` is always `format <kind> x`
+
+`{$bot.uptime:duration}` posted raw seconds while `format duration {$bot.uptime}` said `18h 1s`: two ways to
+format disagreed. Every kind now goes through `formats.apply` on both paths. `:duration` formats a number
+(or numeric text) in every unit, as the command does. On text that is not a number (`1h30m`) it is still
+the cast that reads it into seconds, so `{_:duration}` after `echo 1h30m` is unchanged. `format duration` also reads `1h30m` (with the same parse as the cast) and says `1h 30m`. `:human` is
+unchanged. A stored command that used `:duration` on a number to get seconds back now gets `1h 30m`
+text; arithmetic on it should drop the accessor (the value already is seconds).
 
 ## Consequences
 

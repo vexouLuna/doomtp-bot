@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from doomtp_bot.ints import ascii_int
@@ -10,7 +11,7 @@ from doomtp_bot.runtime.context import Args, CommandContext
 from doomtp_bot.runtime.registry import Command, command
 from doomtp_bot.runtime.result import Code, CommandError, Result
 from doomtp_bot.runtime.spec import CommandSpec, Example, InputMode, LogLevel, Param
-from doomtp_bot.runtime.values import Keyed, render
+from doomtp_bot.runtime.values import ConversionError, Keyed, convert, render
 
 MODULE = "core"
 
@@ -202,9 +203,9 @@ async def result_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> R
         description=(
             "time takes epoch seconds or ISO 8601 text, shown in the channel's timezone with a pattern of "
             "YYYY YY MMMM MMM MM DD D dddd ddd HH H hh mm ss A ([text] is literal; default YYYY-MM-DD HH:mm). "
-            "ago says how long ago; duration spells out seconds in every unit; number and percent take "
+            "ago says how long ago; duration spells out seconds or text like 1h30m in every unit; number and percent take "
             "decimals. The same formatters work inside a placeholder: {x:time(DD MMM)}, {x:ago}, {x:number(2)}, "
-            "{x:percent(1)}, {x:ordinal}, and {x:human} for two units of a duration."
+            "{x:percent(1)}, {x:ordinal}, {x:duration} (every unit), and {x:human} for two units of a duration."
         ),
         params=(
             Param("1", "kind", required=True, type="choice", choices=formats.KINDS),
@@ -220,7 +221,11 @@ async def result_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> R
     )
 )
 async def format_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> Result:
-    text = formats.apply(args["kind"], args["value"], args.get("option"), ctx.channel.timezone, ctx.exec.now())
+    value = args["value"]
+    if args["kind"] == "duration" and ops.as_number(value) is None:
+        with contextlib.suppress(ConversionError):  # `1h30m` reads as the `:duration` cast does; else E_TYPE below
+            value = await convert(value, "duration")
+    text = formats.apply(args["kind"], value, args.get("option"), ctx.channel.timezone, ctx.exec.now())
     return Result.success(text, text)
 
 
