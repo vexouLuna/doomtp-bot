@@ -204,7 +204,7 @@ async def result_cmd(ctx: CommandContext, args: Args, stdin: Result | None) -> R
             "YYYY YY MMMM MMM MM DD D dddd ddd HH H hh mm ss A ([text] is literal; default YYYY-MM-DD HH:mm). "
             "ago says how long ago; duration spells out seconds in every unit; number and percent take "
             "decimals. The same formatters work inside a placeholder: {x:time(DD MMM)}, {x:ago}, {x:number(2)}, "
-            "{x:percent(1)}, {x:ordinal}, and {x:human} for two units of a duration."
+            "{x:percent(1)}, {x:ordinal}, {x:duration} (every unit), and {x:human} for two units of a duration."
         ),
         params=(
             Param("1", "kind", required=True, type="choice", choices=formats.KINDS),
