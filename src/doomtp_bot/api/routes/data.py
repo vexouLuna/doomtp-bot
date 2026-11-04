@@ -20,6 +20,7 @@ Writes are audited as the caller: `via="api"`, or `via="web"` with the user's id
 from __future__ import annotations
 
 from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -227,6 +228,15 @@ async def join_own_channel(request: Request, caller: Caller = PERSONAL_WRITE) ->
     return {"login": login, "channel_id": caller.user_id, "failed_subscriptions": failed}
 
 
+def _known_zone(name: str) -> bool:
+    """An IANA name like Europe/Berlin or UTC."""
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return False
+    return True
+
+
 @router.patch("/channels/{login}", response_model=ChannelJson)
 async def patch_channel(request: Request, login: str, body: ChannelPatch, caller: Caller = WRITE) -> dict[str, Any]:
     settings = _channel(request, login)
@@ -246,6 +256,9 @@ async def patch_channel(request: Request, login: str, body: ChannelPatch, caller
         raise HTTPException(status_code=400, detail=f"{', '.join(nulls)} can't be null")
     if "prefix" in changes and (problem := validate_prefix(changes["prefix"])):
         raise HTTPException(status_code=400, detail=problem)
+    if "timezone" in changes and not _known_zone(changes["timezone"]):
+        # Read with a fallback to UTC everywhere (formats, timers), so a typo would go unnoticed.
+        raise HTTPException(status_code=400, detail=f"no timezone named {changes['timezone']}; use an IANA name")
     unknown = sorted(
         {v for k, v in changes.items() if k.endswith("_role") and policy.rank_of(settings.channel_id, v) is None}
     )
