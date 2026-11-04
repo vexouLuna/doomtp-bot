@@ -702,7 +702,7 @@ These are also in `core`, with the same rules as the sentinels.
 |---------|-----------|--------|
 | `check` | one expression (§3.1), written without braces | `code 0` if it holds (§7.8), `1` if it doesn't, 230 (`E_MISSING_VALUE`) if it is missing; `message = null`, `data` = the value |
 | `calc` | one expression | `code 0`, `message` = the value rendered (§7.6), `data` = the value. The target of a bare expression line (§3.5) |
-| `format` | `time\|ago\|duration\|number\|percent\|ordinal`, a value, then a pattern (`time`) or decimals (`number`, `percent`) | `code 0`, `message = data` = the text, as the formatters above give it; `duration` spells out every unit (`1d 1h 1m 1s`). A value it can't read is 232 (`E_TYPE`). |
+| `format` | `time\|ago\|duration\|number\|percent\|ordinal`, a value, then a pattern (`time`) or decimals (`number`, `percent`) | `code 0`, `message = data` = the text, as the formatters above give it; `duration` spells out every unit (`1d 1h 1m 1s`) and also reads text such as `1h30m` (`1h 30m`). A value it can't read is 232 (`E_TYPE`). |
 | `add` `sub` `mul` `div` `idiv` `mod` | `left right` | `left + - * / // % right`, said |
 | `eq` `ne` `lt` `le` `gt` `ge` `in` | `left right` | `left == != < <= > >= in right`, said as `true`/`false` |
 | `neg`, `not` | `value` | `-value`, `not value` |

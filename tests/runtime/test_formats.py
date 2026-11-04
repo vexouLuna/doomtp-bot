@@ -89,3 +89,10 @@ async def test_every_accessor_matches_the_format_command(kind: str, value: float
     assert pipe.result.code == command.result.code
     if command.result.code == Code.OK:
         assert pipe.send == command.send
+
+
+async def test_format_duration_reads_duration_text() -> None:
+    """`format duration 1h30m` reads the text as the `:duration` cast does (ADR-0037 amendment)."""
+    assert (await run(make_runtime(), "!format duration 1h30m")).send == "1h 30m"
+    assert (await run(make_runtime(), "!format duration 2h")).send == "2h"
+    assert (await run(make_runtime(), "!format duration soon")).result.code == ErrorCode.E_TYPE

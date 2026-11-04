@@ -179,7 +179,7 @@ for formatting inside a placeholder.
 `{$bot.uptime:duration}` posted raw seconds while `format duration {$bot.uptime}` said `18h 1s`: two ways to
 format disagreed. Every kind now goes through `formats.apply` on both paths. `:duration` formats a number
 (or numeric text) in every unit, as the command does. On text that is not a number (`1h30m`) it is still
-the cast that reads it into seconds, so `{_:duration}` after `echo 1h30m` is unchanged. `:human` is
+the cast that reads it into seconds, so `{_:duration}` after `echo 1h30m` is unchanged. `format duration` also reads `1h30m` (with the same parse as the cast) and says `1h 30m`. `:human` is
 unchanged. A stored command that used `:duration` on a number to get seconds back now gets `1h 30m`
 text; arithmetic on it should drop the accessor (the value already is seconds).
 
