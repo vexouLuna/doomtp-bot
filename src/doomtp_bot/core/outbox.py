@@ -194,7 +194,7 @@ class Outbox:
                     return results
 
                 if self._last_text.get(channel_id) == part:
-                    part += DUPLICATE_SUFFIX
+                    part = part[: MAX_CHUNK - len(DUPLICATE_SUFFIX)] + DUPLICATE_SUFFIX  # stay within the limit
                 bucket.take()
                 try:
                     result = await self.sender.send_chat(channel_id, part, reply_to)

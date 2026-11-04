@@ -11,6 +11,7 @@ import dataclasses
 import json
 from typing import TYPE_CHECKING, Any
 
+from doomtp_bot.ints import ascii_int
 from doomtp_bot.lang.ast import Lit
 from doomtp_bot.lang.errors import ParseError
 from doomtp_bot.lang.parser import parse_var_ref
@@ -79,7 +80,7 @@ def parse_value(raw: str) -> Any:
     if text[:1] in "[{" or text.lstrip("-").replace(".", "", 1).isdigit():
         try:
             return json.loads(text)
-        except json.JSONDecodeError:
+        except ValueError:  # not JSON, or digits past int()'s limit
             pass
     return raw
 
@@ -209,9 +210,9 @@ async def _var(ctx: CommandContext, v: list[str]) -> Result:
             )
         count = 5
         if len(v) > 2:
-            if not v[2].isdigit() or not 1 <= int(v[2]) <= 25:
+            count = ascii_int(v[2]) or 0
+            if not 1 <= count <= 25:
                 raise CommandError("count must be 1–25")
-            count = int(v[2])
         if ctx.invoker is None:
             raise CommandError("top needs a chatter")
         space_key = key_for(ctx.exec, ns, name)
