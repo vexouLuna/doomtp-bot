@@ -58,3 +58,11 @@ async def test_duration_stays_the_cast_and_human_formats_it() -> None:
     """`:duration` reads `1h30m` as seconds (the cast); `:human` is a duration's formatter."""
     r = await run(make_runtime(), "!echo 1h30m | echo {_:duration} {5400:human}")
     assert r.send == "5400 1h 30m"
+
+
+async def test_bot_uptime_is_formatted_with_human_not_duration() -> None:
+    """`{$bot.uptime:duration}` is the cast and stays raw seconds; `:human` formats, `/me` and emoji intact."""
+    raw = await run(make_runtime(), "!echo /me ❤️‍🩹 {$bot.uptime:duration}")
+    assert raw.send is not None and raw.send.rsplit(" ", 1)[1].isdigit()
+    r = await run(make_runtime(), "!echo /me ❤️‍🩹 {$bot.uptime:human}")
+    assert r.send is not None and r.send.startswith("/me ❤️‍🩹 ") and r.send.endswith("s")
