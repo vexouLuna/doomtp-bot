@@ -1,5 +1,15 @@
 # doomtp-bot
 
+<!-- conventions:begin: synced from vexouLuna/conventions; edit it there, then run `conventions sync` -->
+[![CI](https://github.com/vexouLuna/doomtp-bot/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/vexouLuna/doomtp-bot/actions/workflows/ci.yml?query=branch%3Adev)
+[![version](https://img.shields.io/github/v/tag/vexouLuna/doomtp-bot?sort=semver&label=version)](https://github.com/vexouLuna/doomtp-bot/tags)
+[![conventions v4.0.0](https://img.shields.io/badge/conventions-v4.0.0-blue)](https://github.com/vexouLuna/conventions/tree/v4.0.0)
+[![api_dtp-api](https://status.vexoul.net/api/v1/endpoints/api_dtp-api/health/badge.svg)](https://status.vexoul.net)
+[![api_dtp-api uptime 7d](https://status.vexoul.net/api/v1/endpoints/api_dtp-api/uptimes/7d/badge.svg)](https://status.vexoul.net)
+[![channels](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdtp.vexoul.net%2Freadyz&query=%24.components.twitch.channels&label=channels)](https://dtp.vexoul.net)
+[![deployed](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fdtp.vexoul.net%2Freadyz&query=%24.version&label=deployed)](https://dtp.vexoul.net)
+<!-- conventions:end -->
+
 A self-hosted, multi-channel Twitch chat bot with a composable command language
 (`!random 1-100 | echo you rolled {_1}`), user-published custom commands, a complete chat log, and a JSON API
 that its web site, [doomtp-web](https://github.com/vexouLuna/doomtp-web), is built on.
