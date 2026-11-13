@@ -7,6 +7,10 @@ stream to be live (`only_live`) and a minimum number of chat lines since they la
 
 One scheduler drives both: an interval needs the monotonic clock (immune to the machine's clock being
 corrected), a cron needs the wall clock (that is the whole point of it), so it keeps both.
+
+A timer held back (offline, quiet chat) stays due, so several can become ready at once: the stream goes
+live and every `only_live` timer would post in the same tick. So a channel gets at most one timer every
+`STAGGER_S`; the rest stay due and follow one by one. Crons keep their minute and aren't held.
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ if TYPE_CHECKING:
 log = structlog.get_logger(__name__)
 
 TICK_S = 5.0
+STAGGER_S = 60.0  # least time between two timers firing in one channel
 
 
 @dataclass
@@ -69,6 +74,7 @@ class TimerScheduler:
         clock: Callable[[], float] | None = None,  # defaults to the running loop's clock
         wall: Callable[[], datetime] | None = None,  # defaults to the real time, in UTC
         tick_s: float = TICK_S,
+        stagger_s: float = STAGGER_S,
         rng: random.Random | None = None,
     ) -> None:
         self.triggers = triggers
@@ -77,11 +83,13 @@ class TimerScheduler:
         self.activity = activity
         self.streams = streams
         self.tick_s = tick_s
+        self.stagger_s = stagger_s
         self.rng = rng or random.Random()
         self._clock = clock
         self._wall = wall
         self._state: dict[tuple[int, str], TimerState] = {}  # by trigger and channel (ADR-0029)
         self._task: asyncio.Task[None] | None = None
+        self._fired_at: dict[str, float] = {}  # channel -> when a timer or cron last fired there
 
     def now(self) -> float:
         return self._clock() if self._clock is not None else asyncio.get_running_loop().time()
@@ -118,11 +126,15 @@ class TimerScheduler:
         """Fire everything that is due. Returns what ran, which makes this testable without sleeping."""
         now = self.now()
         fired: list[Trigger] = []
-        for timer in self.triggers.timers():
-            state = self._state.setdefault(
-                (timer.id, timer.channel_id), TimerState(next_at=now + self._interval(timer))
+        timers = [
+            (
+                timer,
+                self._state.setdefault((timer.id, timer.channel_id), TimerState(next_at=now + self._interval(timer))),
             )
-            if now < state.next_at or not self._ready(timer, state):
+            for timer in self.triggers.timers()
+        ]
+        for timer, state in sorted(timers, key=lambda pair: pair[1].next_at):  # longest overdue first
+            if now < state.next_at or self._too_soon(timer.channel_id, now) or not self._ready(timer, state):
                 continue
             state.next_at = now + self._interval(timer)
             await self._fire(timer, state)
@@ -135,7 +147,12 @@ class TimerScheduler:
             fired.append(cron)
         return fired
 
+    def _too_soon(self, channel_id: str, now: float) -> bool:
+        last = self._fired_at.get(channel_id)
+        return last is not None and now - last < self.stagger_s
+
     async def _fire(self, trigger: Trigger, state: TimerState) -> None:
+        self._fired_at[trigger.channel_id] = self.now()
         state.lines_at_last_run = self.activity.lines(trigger.channel_id)
         settings = self.policy.channel_settings(trigger.channel_id)
         await self.runner.run(trigger, channel_login=settings.login if settings else trigger.channel_id)

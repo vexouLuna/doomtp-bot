@@ -510,6 +510,27 @@ async def test_a_timer_can_require_the_stream_to_be_live(h: Harness) -> None:
     assert h.sender.sent == ["live only"]
 
 
+async def test_timers_held_back_until_the_stream_goes_live_take_turns(h: Harness) -> None:
+    """Three `only_live` timers all become due while offline; going live must not post all three at once."""
+    for n in range(3):
+        await h.say("mod", f"!timer add 60s only_live echo timer {n}")
+    streams = StreamStatus()
+    scheduler = await timer_scheduler(h, streams=streams)
+    await scheduler.tick()
+    h.clock.now = 600
+    assert await scheduler.tick() == []  # offline: all three are due and waiting
+
+    streams.streams[CHANNEL_ID] = {"title": "live now"}
+    assert len(await scheduler.tick()) == 1
+    h.clock.now = 630
+    assert await scheduler.tick() == []  # the next one waits its turn
+    h.clock.now = 660
+    assert len(await scheduler.tick()) == 1
+    h.clock.now = 720
+    assert len(await scheduler.tick()) == 1
+    assert sorted(h.sender.sent) == ["timer 0", "timer 1", "timer 2"]
+
+
 # ── crons ──────────────────────────────────────────────────────────────────
 async def test_a_cron_fires_at_the_minute_it_names(h: Harness) -> None:
     reply = await h.say("mod", '!timer cron "0 18 * * fri" echo the stream starts now')

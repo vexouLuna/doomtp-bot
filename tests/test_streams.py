@@ -78,7 +78,7 @@ async def h(dbs: Databases) -> AsyncIterator[Harness]:
     async def sink(event: StreamStatusChanged) -> None:
         seen.append(event)
 
-    poller = StreamPoller(source=helix, channels=channels, status=status, sink=sink)
+    poller = StreamPoller(source=helix, channels=channels, status=status, sink=sink, conn=dbs.bot)
     yield Harness(policy, channels, helix, status, poller, seen)
 
 
@@ -117,6 +117,30 @@ async def test_parting_a_channel_is_not_an_offline_event(h: Harness) -> None:
 
     assert await h.poller.poll() == []
     assert not h.status.is_live(CHANNEL_ID)
+
+
+async def test_a_restart_mid_stream_does_not_announce_it_again(h: Harness) -> None:
+    """The live map is memory-only, so a new process sees the stream as new; `stream_announced` knows."""
+    h.helix.live = {CHANNEL_ID: LIVE}
+    assert [c.live for c in await h.poller.poll()] == [True]
+
+    after_restart = StreamPoller(source=h.helix, channels=h.channels, status=StreamStatus(), conn=h.poller.conn)
+    assert await after_restart.poll() == []
+    assert after_restart.status.is_live(CHANNEL_ID)  # still live, only not announced
+
+    h.helix.live = {CHANNEL_ID: {**LIVE, "started_at": "2026-09-20T10:00:00Z"}}  # the next day's stream
+    fresh = StreamPoller(source=h.helix, channels=h.channels, status=StreamStatus(), conn=h.poller.conn)
+    assert [(c.channel_id, c.live) for c in await fresh.poll()] == [(CHANNEL_ID, True)]
+
+
+async def test_a_helix_blip_does_not_announce_the_same_stream_twice(h: Harness) -> None:
+    h.helix.live = {CHANNEL_ID: LIVE}
+    await h.poller.poll()
+    h.helix.live = {}
+    await h.poller.poll()
+    h.helix.live = {CHANNEL_ID: LIVE}
+    assert await h.poller.poll() == []
+    assert [c.live for c in h.seen] == [True, False]
 
 
 # ── the capability probe ───────────────────────────────────────────────────

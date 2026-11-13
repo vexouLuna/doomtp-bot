@@ -6,7 +6,8 @@ differences into `StreamStatusChanged` events. That is one request per minute no
 channels are joined, and it works in a channel where nobody authorized anything.
 
 Live state is memory-only on purpose: it is stale the moment the process stops, and the first poll
-after a restart rebuilds it.
+after a restart rebuilds it. What outlives a restart is which stream each channel was last announced
+with (`stream_announced`, by Helix's `started_at`), so a restart mid-stream doesn't go live again.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ import structlog
 
 from doomtp_bot.clock import now_ms
 from doomtp_bot.core.events import StreamStatusChanged
+from doomtp_bot.storage.db import Connection, fetch_all, transaction
 
 log = structlog.get_logger(__name__)
 
@@ -78,14 +80,17 @@ class StreamPoller:
         status: StreamStatus,
         sink: Callable[[StreamStatusChanged], Awaitable[None]] | None = None,
         interval_s: float = INTERVAL_S,
+        conn: Connection | None = None,
     ) -> None:
         self.source = source
+        self.conn = conn  # where announced streams are kept; None keeps them in memory only
         self.channels = channels
         self.status = status
         self.sink = sink
         self.interval_s = interval_s
         self.last_error: str | None = None
         self._task: asyncio.Task[None] | None = None
+        self._announced: dict[str, str] | None = None  # channel id -> `started_at` of the stream announced
 
     def start(self) -> None:
         if self._task is None:
@@ -127,9 +132,15 @@ class StreamPoller:
     async def _apply(self, found: dict[str, dict[str, Any]], wanted: Sequence[str]) -> list[StreamStatusChanged]:
         at = now_ms()
         changes: list[StreamStatusChanged] = []
+        announced = await self._load_announced()
         for channel_id, info in found.items():
             if channel_id not in self.status.streams:
-                changes.append(StreamStatusChanged(channel_id, True, at))
+                started = str(info.get("started_at") or "")
+                if started and announced.get(channel_id) == started:
+                    log.info("streams.still_live", channel=channel_id)  # a restart or a Helix blip, same stream
+                else:
+                    changes.append(StreamStatusChanged(channel_id, True, at))
+                    await self._remember(channel_id, started, at)
             self.status.streams[channel_id] = info
         for channel_id in [c for c in self.status.streams if c not in found]:
             del self.status.streams[channel_id]
@@ -140,3 +151,27 @@ class StreamPoller:
             if self.sink is not None:
                 await self.sink(change)
         return changes
+
+    async def _load_announced(self) -> dict[str, str]:
+        if self._announced is None:
+            rows = [] if self.conn is None else await fetch_all(self.conn, "SELECT * FROM stream_announced")
+            self._announced = {row["channel_id"]: row["started_at"] for row in rows}
+        return self._announced
+
+    async def _remember(self, channel_id: str, started_at: str, at: int) -> None:
+        if not started_at:
+            return
+        assert self._announced is not None
+        self._announced[channel_id] = started_at
+        if self.conn is None:
+            return
+        try:  # losing this only risks one repeat announcement after a restart; never lose the event itself
+            async with transaction(self.conn):
+                await self.conn.execute(
+                    "INSERT INTO stream_announced (channel_id, started_at, announced_at) VALUES (%s, %s, %s)"
+                    " ON CONFLICT (channel_id) DO UPDATE"
+                    " SET started_at = excluded.started_at, announced_at = excluded.announced_at",
+                    (channel_id, started_at, at),
+                )
+        except Exception:
+            log.exception("streams.remember_failed", channel=channel_id)

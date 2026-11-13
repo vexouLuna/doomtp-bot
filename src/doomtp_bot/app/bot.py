@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 
 import structlog
 import uvicorn
@@ -74,6 +75,7 @@ log = structlog.get_logger("doomtp_bot")
 # How long to wait before starting the Twitch client again after it stopped on its own (ADR-0001).
 FIRST_RETRY_S = 5.0
 MAX_RETRY_S = 300.0
+STABLE_AFTER_S = 600.0  # connected this long, a drop is a new outage: backoff starts over
 # How long a stop waits for a running job: past the history service's request timeout (30s).
 JOBS_SHUTDOWN_S = 60.0
 
@@ -134,6 +136,13 @@ class Bot:
         self.retry_in = 0.0  # grows while Twitch keeps refusing, so an outage isn't met with a reconnect storm
         self.down_since: int | None = None  # when the bot last heard chat before Twitch dropped it
         self.restart_cause: str | None = None  # why the client was started again: the watchdog's finding, or the error
+        # One owner for (re)starts: the lock serializes them, `restart_twitch` runs one loop at a time and a
+        # restart asked for while it runs is folded into it (`_restart_wanted`).
+        self._start_lock = asyncio.Lock()
+        self._restarting = False
+        self._restart_wanted = False
+        self._starts = 0  # complete starts so far, so a restart can see that someone else already started
+        self._up_since: float | None = None  # monotonic time of the last complete start
 
     @classmethod
     async def build(cls, settings: Settings) -> Bot:
@@ -347,7 +356,13 @@ class Bot:
         self.probe.on_moderator = self.bot_events.moderator_changed
         channels.on_join = self.bot_events.joined
         self.poller = (
-            StreamPoller(source=self.twitch, channels=channels, status=self.streams, sink=self.dispatcher.handle)
+            StreamPoller(
+                source=self.twitch,
+                channels=channels,
+                status=self.streams,
+                sink=self.dispatcher.handle,
+                conn=self.dbs.bot,
+            )
             if self.twitch is not None
             else None
         )
@@ -535,44 +550,79 @@ class Bot:
 
     # ── the Twitch client's life ───────────────────────────────────────────
     async def start_twitch(self) -> None:
+        """Start the client (boot, re-authorizing); a start that fails is handed to `restart_twitch`."""
+        if not await self._start_twitch():
+            asyncio.create_task(self.restart_twitch(), name="twitch-restart")  # noqa: RUF006
+
+    async def _start_twitch(self, *, unless_started_since: int | None = None) -> bool:
+        """One start. False when it failed and should be tried again. With `unless_started_since`, a start
+        that completed after that count (a re-authorization during the backoff) is left running."""
         twitch = self.twitch
         if twitch is None:
-            return
-        try:
-            if await twitch.start() and twitch.bot_id and twitch.bot_login:
-                await self.channels.ensure_home(twitch.bot_id, twitch.bot_login)
-                try:
-                    await self.channels.sync_logins(twitch.logins_by_id)  # renames while the bot was down
-                except Exception:  # a stale login only misnames a page; never block the start on it
-                    log.exception("channel.sync_logins_failed")
-                self.bot_badges.load(await latest_badges(self.dbs.chatlog, twitch.bot_id))  # VIP status (ADR-0019)
-                await self.channels.subscribe_all()
-                await self.probe.probe_all()  # tier per channel, before anything checks a capability
-                await self.restore_broadcasters()  # full-tier events, where a broadcaster connected
-                await self.bot_events.online(  # `bot_online` (ADR-0034)
-                    self.last_run, down_since_ms=self.down_since, cause=self.restart_cause
-                )
-                self.probe.start()
-                if self.poller is not None:
-                    await self.poller.poll()
-                    self.poller.start()
-                queued = await self.backfill_queue.queue_startup()  # gaps since the last run (ADR-0008)
-                if queued:
-                    log.info("history.startup_backfill", channels=len(queued))
-                if not self.jobs.running:
-                    await self.jobs.start()  # first queues again what the last stop cut short
-                self.retry_in = 0.0
-                self.down_since = self.restart_cause = None  # announced; a later start (re-authorizing) is no outage
-        except Exception as exc:
-            # Twitch unreachable mid-start left the bot deaf for a day with nobody trying again (2026-10-31).
-            log.exception("twitch.start_failed")
-            twitch.last_error = repr(exc)
-            asyncio.create_task(self.restart_twitch(), name="twitch-restart")  # noqa: RUF006
+            return True
+        async with self._start_lock:
+            if unless_started_since is not None and self._starts != unless_started_since:
+                return True
+            try:
+                if await twitch.start() and twitch.bot_id and twitch.bot_login:
+                    await self.channels.ensure_home(twitch.bot_id, twitch.bot_login)
+                    try:
+                        await self.channels.sync_logins(twitch.logins_by_id)  # renames while the bot was down
+                    except Exception:  # a stale login only misnames a page; never block the start on it
+                        log.exception("channel.sync_logins_failed")
+                    self.bot_badges.load(await latest_badges(self.dbs.chatlog, twitch.bot_id))  # VIP status (ADR-0019)
+                    await self.channels.subscribe_all()
+                    await self.probe.probe_all()  # tier per channel, before anything checks a capability
+                    await self.restore_broadcasters()  # full-tier events, where a broadcaster connected
+                    await self.bot_events.online(  # `bot_online` (ADR-0034)
+                        self.last_run, down_since_ms=self.down_since, cause=self.restart_cause
+                    )
+                    self.probe.start()
+                    if self.poller is not None:
+                        await self.poller.poll()
+                        self.poller.start()
+                    queued = await self.backfill_queue.queue_startup()  # gaps since the last run (ADR-0008)
+                    if queued:
+                        log.info("history.startup_backfill", channels=len(queued))
+                    if not self.jobs.running:
+                        await self.jobs.start()  # first queues again what the last stop cut short
+                    # `retry_in` is not reset here: a connection that drops right after every start must
+                    # still back off. `restart_twitch` resets it once a run lasted STABLE_AFTER_S.
+                    self._starts += 1
+                    self._up_since = time.monotonic()
+                    self.down_since = self.restart_cause = (
+                        None  # announced; a later start (re-authorizing) is no outage
+                    )
+                return True
+            except Exception as exc:
+                # Twitch unreachable mid-start left the bot deaf for a day with nobody trying again (2026-10-31).
+                log.exception("twitch.start_failed")
+                twitch.last_error = repr(exc)
+                return False
 
     async def restart_twitch(self) -> None:
         """The client stopped by itself: EventSub gave up, or the token went bad. Start it again, waiting
         longer each time (ADR-0001). Coming back re-runs the startup path, so subscriptions, capabilities
-        and the backfill of whatever was missed while it was deaf are all done again (ADR-0008)."""
+        and the backfill of whatever was missed while it was deaf are all done again (ADR-0008).
+
+        The watchdog, the end of `_run` and a failed start can all ask at once; only one loop runs, and
+        a request made while it runs makes it go round once more instead of starting a second one."""
+        self._restart_wanted = True
+        if self._restarting:
+            log.info("twitch.restart_already_running")
+            return
+        self._restarting = True
+        try:
+            while self._restart_wanted:
+                await self._restart_once()
+        finally:
+            self._restarting = False
+
+    async def _restart_once(self) -> None:
+        starts = self._starts
+        if self._up_since is not None and time.monotonic() - self._up_since >= STABLE_AFTER_S:
+            self.retry_in = 0.0  # it ran long enough: this is a new outage, not the same one flapping
+        self._up_since = None
         self.retry_in = min(max(self.retry_in * 2, FIRST_RETRY_S), MAX_RETRY_S)
         twitch = self.twitch
         if twitch is not None:
@@ -583,7 +633,9 @@ class Bot:
         # that the startup backfill fills once the client is back.
         await self.writer.end_all_sessions("restart", at=twitch.heard_at if twitch is not None else None)
         await asyncio.sleep(self.retry_in)
-        await self.start_twitch()
+        self._restart_wanted = False  # this start answers every request made so far
+        if not await self._start_twitch(unless_started_since=starts):
+            self._restart_wanted = True
 
     async def restore_broadcasters(self) -> None:
         """Give the client the broadcaster tokens we hold, and re-subscribe their events (ADR-0007)."""
