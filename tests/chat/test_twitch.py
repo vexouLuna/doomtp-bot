@@ -676,45 +676,153 @@ async def test_the_watchdog_lets_a_quick_reconnect_finish() -> None:
     watch.cancel()
 
 
-async def test_starting_again_clears_the_outage_it_announced() -> None:
-    """A re-authorization re-runs start_twitch; the next start must not repeat a stale outage."""
+def _bot(start: Any, **extra: Any) -> Any:
+    """A `Bot` with just what its Twitch start and restart paths touch; `start` is the client's."""
     from doomtp_bot.app.bot import Bot
-
-    announced: list[tuple[int | None, str | None]] = []
 
     async def noop(*_a: Any, **_k: Any) -> Any:
         return []
 
     async def online(_run: Any, *, down_since_ms: int | None, cause: str | None) -> None:
-        announced.append((down_since_ms, cause))
+        bot.announced.append((down_since_ms, cause))
 
-    twitch = NS(start=lambda: _true(), bot_id="1", bot_login="bot", logins_by_id={})
-    bot = NS(
-        twitch=twitch,
-        channels=NS(ensure_home=noop, sync_logins=noop, subscribe_all=noop),
-        dbs=NS(chatlog=None),
-        bot_badges=NS(load=lambda _b: None),
-        probe=NS(probe_all=noop, start=lambda: None),
-        restore_broadcasters=noop,
-        bot_events=NS(online=online),
-        last_run=None,
-        down_since=123,
-        restart_cause="boom",
-        poller=None,
-        backfill_queue=NS(queue_startup=noop),
-        jobs=NS(running=True),
-        retry_in=4.0,
-    )
+    bot: Any = Bot(NS())  # type: ignore[arg-type]
+    twitch = NS(start=start, bot_id="1", bot_login="bot", logins_by_id={}, heard_at=None, last_error=None)
+    for name, value in {
+        "twitch": twitch,
+        "channels": NS(ensure_home=noop, sync_logins=noop, subscribe_all=noop),
+        "dbs": NS(chatlog=None),
+        "bot_badges": NS(load=lambda _b: None),
+        "probe": NS(probe_all=noop, start=lambda: None),
+        "restore_broadcasters": noop,
+        "bot_events": NS(online=online),
+        "last_run": None,
+        "poller": None,
+        "backfill_queue": NS(queue_startup=noop),
+        "jobs": NS(running=True),
+        "writer": NS(end_all_sessions=noop),
+        "announced": [],
+        **extra,
+    }.items():
+        setattr(bot, name, value)
+    return bot
+
+
+@pytest.fixture
+def quick_restarts(monkeypatch: pytest.MonkeyPatch) -> None:
     import doomtp_bot.app.bot as bot_module
 
-    original = bot_module.latest_badges
-    bot_module.latest_badges = noop  # type: ignore[assignment]
+    async def noop(*_a: Any, **_k: Any) -> Any:
+        return []
+
+    monkeypatch.setattr(bot_module, "latest_badges", noop)
+    monkeypatch.setattr(bot_module, "FIRST_RETRY_S", 0.0)  # backoff of 0 s, so restarts don't sleep
+
+
+@pytest.mark.usefixtures("quick_restarts")
+async def test_starting_again_clears_the_outage_it_announced() -> None:
+    """A re-authorization re-runs start_twitch; the next start must not repeat a stale outage."""
+    bot = _bot(lambda: _true(), down_since=123, restart_cause="boom", retry_in=4.0)
+    await bot.start_twitch()
+    await bot.start_twitch()
+    assert bot.announced == [(123, "boom"), (None, None)]
+
+
+@pytest.mark.usefixtures("quick_restarts")
+async def test_restarts_asked_for_at_once_start_the_client_once() -> None:
+    """The watchdog, the end of `_run` and a failed start can all ask; only one restart runs."""
+    starts: list[bool] = []
+
+    async def start() -> bool:
+        starts.append(True)
+        return True
+
+    bot = _bot(start)
+    await asyncio.gather(bot.restart_twitch(), bot.restart_twitch(), bot.restart_twitch())
+    assert len(starts) == 1
+    assert not bot._restarting
+
+
+@pytest.mark.usefixtures("quick_restarts")
+async def test_a_restart_asked_for_while_one_runs_goes_round_once_more() -> None:
+    starts: list[bool] = []
+
+    async def start() -> bool:
+        starts.append(True)
+        if len(starts) == 1:
+            asyncio.create_task(bot.restart_twitch())  # the new client dies while the start finishes
+            await asyncio.sleep(0)
+        return True
+
+    bot = _bot(start)
+    await bot.restart_twitch()
+    await asyncio.sleep(0)
+    assert len(starts) == 2
+
+
+@pytest.mark.usefixtures("quick_restarts")
+async def test_a_failed_restart_tries_again_and_backs_off() -> None:
+    import doomtp_bot.app.bot as bot_module
+
+    answers = iter([RuntimeError("helix down"), RuntimeError("still down"), True])
+
+    async def start() -> bool:
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    bot = _bot(start, retry_in=1.0)
+    sleeps: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        await real_sleep(0)
+
+    bot_module.asyncio.sleep, saved = sleep, bot_module.asyncio.sleep  # type: ignore[assignment]
     try:
-        await Bot.start_twitch(bot)  # type: ignore[arg-type]
-        await Bot.start_twitch(bot)  # type: ignore[arg-type]
+        await bot.restart_twitch()
     finally:
-        bot_module.latest_badges = original
-    assert announced == [(123, "boom"), (None, None)]
+        bot_module.asyncio.sleep = saved  # type: ignore[assignment]
+    assert sleeps == [2.0, 4.0, 8.0]
+    assert bot._starts == 1
+
+
+@pytest.mark.usefixtures("quick_restarts")
+async def test_backoff_resets_only_after_a_stable_run() -> None:
+    import time
+
+    import doomtp_bot.app.bot as bot_module
+
+    bot = _bot(lambda: _true(), retry_in=40.0)
+    await bot.start_twitch()
+    assert bot.retry_in == 40.0  # a complete start doesn't reset it: the connection may drop at once
+    await bot.restart_twitch()  # dropped right after starting: the same outage, flapping
+    assert bot.retry_in == 80.0
+
+    bot._up_since = time.monotonic() - bot_module.STABLE_AFTER_S - 1  # ran long enough
+    await bot.restart_twitch()
+    assert bot.retry_in == bot_module.FIRST_RETRY_S
+
+
+@pytest.mark.usefixtures("quick_restarts")
+async def test_a_start_during_the_backoff_is_not_undone_by_the_restart() -> None:
+    """Re-authorizing while a restart waits starts the client; the restart must not start it again."""
+    starts: list[bool] = []
+
+    async def start() -> bool:
+        starts.append(True)
+        return True
+
+    bot = _bot(start)
+
+    async def end_all_sessions(*_a: Any, **_k: Any) -> None:
+        await bot.start_twitch()  # lands between the restart's decision and its start
+
+    bot.writer = NS(end_all_sessions=end_all_sessions)
+    await bot.restart_twitch()
+    assert len(starts) == 1
 
 
 async def _true() -> bool:
