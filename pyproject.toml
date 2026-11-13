@@ -30,7 +30,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "httpx>=0.28.1",
-    "pyyaml>=6",
+    "pyyaml>=6.0.3",
     "ruff>=0.6",
     "mypy>=1.10",
     "types-regex",
