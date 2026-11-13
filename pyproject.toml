@@ -34,7 +34,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "types-regex",
-    "railroad-diagrams>=3",
+    "railroad-diagrams>=3.0.1",
 ]
 
 [project.scripts]
