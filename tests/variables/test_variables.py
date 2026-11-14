@@ -337,7 +337,7 @@ async def test_channel_writes_audited_with_values(h: Harness) -> None:
     await h.reply("mod", "!var set channel.deaths 3")
     await h.reply("mod", "!var incr channel.deaths")
     async with await h.dbs.bot.execute(
-        "SELECT action, before, after FROM public.audit_log WHERE target = 'channel.deaths'"
+        "SELECT action, before, after FROM public.audit_log WHERE target = 'channel.deaths' ORDER BY id"
     ) as cur:
         rows = [(r["action"], r["before"], r["after"]) for r in await cur.fetchall()]
     assert rows == [("variable.set", None, 3), ("variable.incr", 3, 4)]
