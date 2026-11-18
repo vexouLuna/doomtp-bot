@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -17,6 +18,7 @@ from doomtp_bot.core.events import (
     UserMessagesCleared,
 )
 from doomtp_bot.core.streams import live_fields
+from doomtp_bot.lang.altprefix import forward
 from doomtp_bot.lang.ast import invocations
 from doomtp_bot.lang.parser import DEFAULT_PREFIX, looks_like_command
 from doomtp_bot.runtime.engine import should_log_run
@@ -27,6 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Coroutine, Sequence
 
     from doomtp_bot.channels.manager import ChannelManager
+    from doomtp_bot.chatlog.live import LiveFeed
     from doomtp_bot.chatlog.writer import ChatLogWriter
     from doomtp_bot.core.links import BotBadges
     from doomtp_bot.core.outbox import Outbox
@@ -83,6 +86,7 @@ class Dispatcher:
         customcmds: CustomCommandService | None = None,
         bot_badges: BotBadges | None = None,
         watchers: Sequence[ChatWatcher] = (),
+        live: LiveFeed | None = None,
         max_concurrent_runs: int = MAX_CONCURRENT_RUNS,
     ) -> None:
         self.runtime = runtime
@@ -99,6 +103,7 @@ class Dispatcher:
         self.customcmds = customcmds
         self.bot_badges = bot_badges
         self.watchers = tuple(watchers)
+        self.live = live  # the live chat feed (ADR-0038)
         # Watcher events run one at a time per channel, in the order the lines came (ADR-0028).
         self._watch_locks: dict[str, asyncio.Lock] = {}
         self._slots = asyncio.Semaphore(max_concurrent_runs)
@@ -111,11 +116,15 @@ class Dispatcher:
             case ChatNotification():
                 if self.channels.is_active(event.channel_id):
                     await self.writer.notification(event)
+                    if self.live is not None:
+                        self.live.notification(event)
                     self._spawn(self._notification_triggers(event), f"trigger-{event.id}")
             case MessageDeleted() | UserMessagesCleared() | ChatCleared():
                 self.moderation.record(event)
                 if self.channels.is_active(event.channel_id):
                     await self.writer.moderation(event)
+                    if self.live is not None:
+                        self.live.removal(event)
             case StreamStatusChanged():
                 if self.channels.is_active(event.channel_id):
                     self._spawn(self._stream_triggers(event), f"stream-{event.channel_id}")
@@ -128,8 +137,18 @@ class Dispatcher:
             await self.channels.follow_rename(msg.channel_id, msg.channel_login.lower())  # renamed on Twitch
         prefix = settings.prefix if settings else DEFAULT_PREFIX
         is_command = looks_like_command(msg.text, prefix, msg.reply_mentions)
+        # An alternate sign forwards its commands to the main one (spec §2.1.1). The log keeps the line as
+        # typed and counts it as a command, so listeners never see it.
+        forwarded = (
+            None
+            if is_command or settings is None
+            else forward(msg.text, prefix, settings.alt_prefixes, msg.reply_mentions)
+        )
+        is_command = is_command or forwarded is not None
         if settings is None or settings.log_enabled:
             await self.writer.message(msg, is_command=is_command)  # logged first, always — including ignored users
+        if self.live is not None:
+            self.live.message(msg, is_command=is_command)  # as typed, like the log
         if self.activity is not None and not msg.is_self:
             self.activity.saw_message(msg.channel_id)
         if self.watchers and msg.source == "eventsub":
@@ -145,8 +164,10 @@ class Dispatcher:
 
         if self.policy.is_ignored(msg.channel_id, msg.user_id):
             # Someone who ignored themselves can still take it back; nobody else gets past (§5.4).
-            if is_unignore_me(msg.text, prefix) and self.policy.ignored_only_by_self(msg.channel_id, msg.user_id):
-                self._spawn(self._run(msg), f"run-{msg.message_id}")
+            if is_unignore_me(forwarded or msg.text, prefix) and self.policy.ignored_only_by_self(
+                msg.channel_id, msg.user_id
+            ):
+                self._spawn(self._run(msg, forwarded), f"run-{msg.message_id}")
             return
         if self.automod is not None:  # architecture §9.3: incoming chat the filter would block
             verdict = self.automod.verdict(msg)
@@ -156,7 +177,7 @@ class Dispatcher:
         if not is_command:
             self._spawn(self._listeners(msg), f"listen-{msg.message_id}")  # architecture §7
             return
-        self._spawn(self._run(msg), f"run-{msg.message_id}")
+        self._spawn(self._run(msg, forwarded), f"run-{msg.message_id}")
 
     def _spawn(self, work: Coroutine[None, None, None], name: str) -> None:
         task = asyncio.create_task(work, name=name)
@@ -278,7 +299,10 @@ class Dispatcher:
         while self._tasks:
             await asyncio.gather(*list(self._tasks), return_exceptions=True)
 
-    async def _run(self, msg: ChatMessage) -> None:
+    async def _run(self, msg: ChatMessage, forwarded: str | None = None) -> None:
+        """`forwarded`: the line rewritten from an alternate sign; it runs as if typed that way."""
+        if forwarded is not None:
+            msg = replace(msg, text=forwarded)
         async with self._slots:
             try:
                 chatter = self.policy.build_chatter(

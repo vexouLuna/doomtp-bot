@@ -12,6 +12,7 @@ import pytest
 
 from doomtp_bot.app.dispatch import Dispatcher
 from doomtp_bot.channels.manager import ChannelManager
+from doomtp_bot.chatlog.live import LiveFeed
 from doomtp_bot.chatlog.writer import ChatLogWriter
 from doomtp_bot.core.events import Badge, ChatCleared, ChatMessage, ChatNotification, MessageDeleted
 from doomtp_bot.core.links import BotBadges
@@ -20,6 +21,7 @@ from doomtp_bot.core.streams import StreamStatus
 from doomtp_bot.customcmds.resolution import CustomCommandLoader
 from doomtp_bot.customcmds.service import CustomCommandService
 from doomtp_bot.history.backfill import BackfillService
+from doomtp_bot.lang.altprefix import AltPrefix
 from doomtp_bot.lang.parser import DEFAULT_PREFIX
 from doomtp_bot.moderation.index import ModerationIndex
 from doomtp_bot.modules import builtin_registry
@@ -542,3 +544,53 @@ async def test_ignore_me_can_be_taken_back_but_an_ignore_someone_else_set_stays(
     assert replies[0].startswith("ignoring you here, Alice; say !unignore me")
     assert replies[1:] == ["welcome back, Alice", "pong", replies[0]]
     assert h.policy.is_ignored(CHANNEL_ID, "401") and h.policy.is_ignored(CHANNEL_ID, "400")
+
+
+async def test_an_alternate_prefix_forwards_only_its_commands(h: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Spec §2.1.1: `?ping` runs as `!ping`; the log keeps the line as typed and counts it as a command,
+    and regex listeners never see it."""
+    heard: list[str] = []
+
+    async def listeners(msg: ChatMessage) -> None:
+        heard.append(msg.text)
+
+    monkeypatch.setattr(h.dispatcher, "_listeners", listeners)
+    await h.policy.mutate(
+        lambda repo: repo.set_channel_field(
+            CHANNEL_ID, "alt_prefixes", (AltPrefix("?", ("echo",)), AltPrefix("$", None)), Actor("1")
+        )
+    )
+    await h.say("alice", "?echo a")
+    await h.say("alice", "?ping")  # not in that list: ordinary chat
+    await h.say("alice", "$echo b")  # "all"
+    await h.say("alice", "hey ?echo c")  # mid-line
+    await h.say("alice", "!echo ?echo d")  # the main sign still works; `?` inside is just text
+    await h.settle()
+    assert [text for _, text, _ in h.twitch.sent] == ["a", "b", "?echo d"]
+    assert heard == ["?ping", "hey ?echo c"]
+    assert await h.rows("SELECT text, is_command FROM messages ORDER BY sent_at") == [
+        ("?echo a", 1), ("?ping", 0), ("$echo b", 1), ("hey ?echo c", 0), ("!echo ?echo d", 1),
+    ]  # fmt: skip
+    async with await h.dbs.bot.execute(
+        "SELECT action FROM public.audit_log WHERE action = 'channel.set.alt_prefixes'"
+    ) as cur:
+        assert len(await cur.fetchall()) == 1
+
+
+async def test_the_dispatcher_feeds_the_live_chat_feed(h: Harness) -> None:
+    """ADR-0038: every message as typed (forwarded ones as commands), notifications and removals."""
+    h.dispatcher.live = feed = LiveFeed()
+    sub = feed.open(CHANNEL_ID, "1.2.3.4")
+    assert sub is not None
+    mid = await h.say("alice", "hello")
+    await h.say("alice", "!ping")
+    await h.dispatcher.handle(ChatNotification("n1", CHANNEL_ID, "400", "raid", {"viewers": 3}, 1))
+    await h.dispatcher.handle(MessageDeleted(CHANNEL_ID, mid, "400", 2))
+    await h.dispatcher.handle(ChatCleared(CHANNEL_ID, 3))
+    await h.settle()
+    got = [sub.queue.get_nowait() for _ in range(sub.queue.qsize())]
+    assert [(e, d.get("text"), d.get("is_command")) for e, d in got[:2]] == [
+        ("message", "hello", False), ("message", "!ping", True),
+    ]  # fmt: skip
+    assert [e for e, _ in got[2:]] == ["notification", "delete", "chat_clear"]
+    assert got[3][1]["message_id"] == mid

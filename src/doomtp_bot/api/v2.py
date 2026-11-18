@@ -44,7 +44,9 @@ from vex_platform.jobs.router import jobs_router
 from doomtp_bot.api import v2_users
 from doomtp_bot.api.access import Area, Caller, authenticate, check_area, platform_actor
 from doomtp_bot.api.routes.data import _login_of
+from doomtp_bot.api.v2_live import live_router
 from doomtp_bot.api.v2_log import log_router
+from doomtp_bot.api.v2_pronouns import pronouns_router
 from doomtp_bot.audit.log import TABLE as AUDIT_TABLE
 
 PREFIX = "/api/v2"
@@ -127,6 +129,8 @@ def mount(app: FastAPI, jobs: JobRuntime) -> None:
         )  # fmt: skip
     )
     v2.include_router(log_router())
+    v2.include_router(live_router())
+    v2.include_router(pronouns_router())
     v2.include_router(v2_users.users_router())
     schema = APIRouter()  # v2 alone, for its own OpenAPI
     schema.include_router(v2)

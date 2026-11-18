@@ -51,6 +51,8 @@ A multi-channel Twitch chat bot written in Python, self-hosted on a homelab in a
 | [ADR-0035](adr/0035-twitch-user-lookup-for-chat-cards.md) | A Twitch user lookup for the sites' chat user cards |
 | [ADR-0036](adr/0036-remove-the-view-as-preview.md) | Remove the View as preview |
 | [ADR-0037](adr/0037-listed-forms-switch-results-and-format.md) | Listed forms, `switch`, multi-branch `ifelse`, returned fields and `format` |
+| [ADR-0038](adr/0038-live-chat-feed.md) | A live chat feed as server-sent events (`/api/v2/channels/{login}/chat/live`) |
+| [ADR-0039](adr/0039-chat-pronouns.md) | Chatters' pronouns, looked up by the bot (`/api/v2/channels/{login}/pronouns`) |
 
 ---
 
@@ -175,7 +177,7 @@ Three properties the picture is meant to make obvious:
 2. The Dispatcher handles it in order:
    - **ChatLogger** queues it for storage. This always happens, including for ignored users.
    - The **Ignore gate** stops processing here if the sender is ignored, is the bot itself, or carries the Twitch chat-bot badge (configurable).
-   - **Dispatch** checks whether the message starts with the channel prefix, which makes it a command expression, and runs any regex **listeners** enabled for the channel.
+   - **Dispatch** checks whether the message starts with the channel prefix (or an alternate prefix that forwards that command, spec §2.1.1), which makes it a command expression, and runs any regex **listeners** enabled for the channel.
 3. The runtime handles the expression (ADR-0005):
    1. **Parse** the text into an AST.
    2. **Resolve** each command name. The order is built-in, then published in the channel, then the user's personal commands.
@@ -636,6 +638,10 @@ A **race window** remains: a mod can act after the message has already been sent
     broadcaster inviting the bot again themselves (through `/auth/connect`, which `!join` in the bot's chat links to).
   - Never send unsolicited messages in basic-tier channels. Timers and alerts there require an explicit opt-in by a mod.
 - **Per-channel settings:** `prefix`, `reply_hold_ms`, `publish_min_role`, `channel_var_write_role`, `history_backfill` (on for new channels), `log_enabled`, `quiet_errors`, `cc_edit_notice` (off by default), `bot_enabled` (on by default; off, the bot logs but never sends a message there), `slur_filter` (`base`, `strict` or `strictest`; `base` always applies, see `filters/slurs.py`) and the callback defaults.
+- **Alternate prefixes** (`alt_prefixes`, spec §2.1.1): up to 5 extra signs, each forwarding a list of commands
+  (or all) to the channel prefix. Dispatch rewrites a matching line to the main sign before it parses it, logs the
+  line as typed with `is_command` set, and keeps it from listeners. Edited in the site's channel settings
+  (`PATCH /api/v1/channels/{login}`); changing the main prefix refuses a sign an alternate already uses.
 - **Prefix validation:** a prefix can't start with `/` or `.`, because Twitch clients treat those as chat commands. Its length is 1–3 characters and it can't contain whitespace.
 
 ---
@@ -659,6 +665,8 @@ A **race window** remains: a mod can act after the message has already been sent
 
 **API keys** (`api/keys.py`) are 32 random bytes with a `dtb_` prefix, stored only as a SHA-256 — random keys need no password hashing, since there is nothing to guess. They are created and revoked with an admin session through `/api/v1/keys` (the web admin), and the key is in the response that creates it and nowhere else. Two scopes: `read` and `write`. A session cookie also authenticates, but a cookie-authenticated *write* must carry the session's CSRF token in `X-CSRF-Token`, because browsers send cookies whether or not the page meant to.
 | `GET /api/v1/channels/{login}/log`, `/log/coverage` | **Now** | The channel's moderators, or anyone while its `public_log` and `log_enabled` are on, a limited number of reads a minute per address and without moderation events (ADR-0025, ADR-0026); removed messages are in for them too, flagged, while `/messages` leaves them out. The log as one timeline of messages, notifications and moderation events in time order, a keyset page at a time (`next` → `cursor`), newest first or oldest first, narrowed by window, kind, chatter (old logins too), search or `hide_removed`. Messages carry their moderation flags and the command run that links a command to the bot's reply; a notification carries the chatter's own message (`fragments`, `badges`, `color`), as a resub's is shown under its system line; v2's `raw=true` adds each entry's row as stored (EventSub's event, the IRC line, or a legacy rebuild). `/coverage` lists the sessions and gaps in a window and the backfill that filled each. The web site's log viewer and the VOD archive's chat replay both read it. |
+| `GET /api/v2/channels/{login}/chat/live` | **Now** | The channel's chat as it happens, as server-sent events (ADR-0038), under the log's access rule: `message` and `notification` (the log's v2 entries), `delete`, `user_clear`, `chat_clear`, and `end` when the public log goes off, the client falls behind or the bot stops. No replay; 4 streams per address. Fed by `chatlog/live.py`, which the dispatcher calls beside the log writer. For the OBS chat overlay. |
+| `GET /api/v2/channels/{login}/pronouns` | **Now** | Chatters' pronouns for the chat overlay (ADR-0039), under the live feed's access rule: `?user=` repeated, at most 50; each comes back `set` with a `display` ("She/Her"), `none`, or `unknown` when the pronoun service didn't answer. The bot asks alejo.io's service (`pronouns.py`), 3 s timeout, cached an hour per chatter and a day for the table. |
 | `/api/v1/session`, `/api/v1/keys` | **Now** | The admin login and API keys as JSON, for a UI served from elsewhere on the same host (ADR-0016). A session has a `role`: the password is an admin; a Twitch sign-in (ADR-0017, `/auth/admin/login`) is an admin for a bot owner or bot admin, a moderator of the channels it lists, or a user who manages none (ADR-0026). `channel_roles` and `channel_ranks` say why and how far it manages each channel, and `own_channel` whether the bot is in the user's own. Its writes are audited as `via="web"` under the user's id. Keys are for admins. The CSRF token comes from `GET /session`, and `twitch_login` there says whether the Twitch sign-in is set up. Keys are managed with a session only, never with a key. Failed logins are limited per client address; behind a proxy, `WEB_FORWARDED_ALLOW_IPS` names the proxies whose forwarded address is believed. |
 | `X-View-As` request header | **Removed** | The admin preview of ADR-0030 was taken out by ADR-0036. A request that still carries the header gets 400, so a site that thinks it is previewing never acts as the admin. |
 | `GET /api/v1/site`, `/site/channels/{login}`, `/roles`, `/grammar`, `/explain/{token}`, `/packs`, `/channels/{login}/packs` | **Now** | Public, and only what the public pages print: the joined channels, one channel's sign, tier and status, the built-in roles, the grammar, a chat-linked explain report, published packs, each member marked `internal` when only its pack's own commands can call it (ADR-0016) |

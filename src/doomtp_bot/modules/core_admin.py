@@ -6,13 +6,14 @@ Not toggleable. Every write goes through PolicyService (audited, snapshot rebuil
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from doomtp_bot.customcmds.packs import custom_modules
 from doomtp_bot.customcmds.resolution import MODULE as CUSTOM_MODULE
 from doomtp_bot.ints import ascii_int
 from doomtp_bot.lang import SYNTAX_VERSION
+from doomtp_bot.lang.altprefix import MAX_ALT_COMMANDS, MAX_ALT_PREFIXES, AltPrefix, same_sign
 from doomtp_bot.lang.errors import ParseError
 from doomtp_bot.lang.parser import DEFAULT_PREFIX, Context, parse, parse_template
 from doomtp_bot.modules._common import actor, is_custom, need, policy_of, rank, reject_filtered, rule_spec, user_arg
@@ -420,11 +421,41 @@ def validate_prefix(prefix: str) -> str | None:
     return None
 
 
+_COMMAND_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,39}")
+
+
+def validate_alt_prefixes(prefix: str, alternates: Sequence[AltPrefix]) -> str | None:
+    """Spec §2.1.1: each alternate follows the prefix rules, and no two signs (main included) are the same."""
+    if len(alternates) > MAX_ALT_PREFIXES:
+        return f"at most {MAX_ALT_PREFIXES} alternate prefixes"
+    seen = [prefix]
+    for alt in alternates:
+        if problem := validate_prefix(alt.prefix):
+            return f"alternate {problem}"
+        if any(same_sign(alt.prefix, s) for s in seen):
+            return f"{alt.prefix} is already {'the prefix' if same_sign(alt.prefix, prefix) else 'an alternate prefix'}"
+        seen.append(alt.prefix)
+        if alt.commands is None:
+            continue
+        if not 1 <= len(alt.commands) <= MAX_ALT_COMMANDS:
+            return f"alternate prefix {alt.prefix} needs 1–{MAX_ALT_COMMANDS} commands, or all"
+        if bad := [n for n in alt.commands if not _COMMAND_NAME.fullmatch(n)]:
+            return f"not a command name: {bad[0]}"
+    return None
+
+
+def main_prefix_clash(prefix: str, alternates: Sequence[AltPrefix]) -> str | None:
+    if any(same_sign(prefix, a.prefix) for a in alternates):
+        return f"{prefix} is an alternate prefix; remove it there first"
+    return None
+
+
 @_handler
 async def _prefix(ctx: CommandContext, v: list[str], args: Args) -> Result:
     if not v:
         return Result.success(f"prefix: {ctx.channel.prefix}", ctx.channel.prefix)
-    problem = validate_prefix(v[0])
+    settings = policy_of(ctx).channel_settings(ctx.channel.id)
+    problem = validate_prefix(v[0]) or main_prefix_clash(v[0], settings.alt_prefixes if settings else ())
     if problem:
         raise CommandError(problem)
     await _write(ctx, lambda repo: repo.set_channel_field(ctx.channel.id, "prefix", v[0], actor(ctx)))
