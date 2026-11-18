@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from doomtp_bot.audit.log import write_audit
 from doomtp_bot.clock import now_ms
+from doomtp_bot.lang.altprefix import dump_alt_prefixes
 from doomtp_bot.lang.parser import DEFAULT_PREFIX
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.policy.settings import CHANNEL_COLUMNS
@@ -96,6 +97,8 @@ class PolicyRepository:
             )
             if column == "capabilities" and isinstance(value, (set, frozenset, list)):
                 stored: object = json.dumps(sorted(value))
+            elif column == "alt_prefixes" and isinstance(value, (list, tuple)):
+                stored = dump_alt_prefixes(value)  # AltPrefix items, checked by the caller
             else:
                 stored = value
             await self.conn.execute(

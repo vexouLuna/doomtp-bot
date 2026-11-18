@@ -13,6 +13,7 @@ from doomtp_bot.policy.roles import BROADCASTER_RANK, MODERATOR_RANK
 #: backfill and the "who may" roles for the broadcaster.
 CHANNEL_SETTINGS: dict[str, int] = {
     "prefix": MODERATOR_RANK,
+    "alt_prefixes": MODERATOR_RANK,
     "quiet_errors": MODERATOR_RANK,
     "cc_edit_notice": MODERATOR_RANK,
     "log_enabled": BROADCASTER_RANK,

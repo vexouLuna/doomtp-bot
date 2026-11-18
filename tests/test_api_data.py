@@ -844,3 +844,39 @@ async def test_ignored_users_say_who_ignored_them_and_can_be_changed(
     audit = (await client.get("/api/v1/audit", headers=auth(write_key))).json()["entries"]
     by_api = [(e["action"], e["target"]) for e in audit if e["via"] == "api" and e["action"].startswith("ignore.")]
     assert by_api == [("ignore.remove", CHANNEL_ID), ("ignore.remove", "200"), ("ignore.add", CHANNEL_ID)]
+
+
+async def test_alternate_prefixes_are_set_checked_and_listed(client: httpx.AsyncClient, write_key: str) -> None:
+    base = f"/api/v1/channels/{CHANNEL_LOGIN}"
+    await client.patch(base, json={"prefix": "!"}, headers=auth(write_key))
+    ok = await client.patch(
+        base,
+        json={
+            "alt_prefixes": [{"prefix": "?", "commands": ["Ping", "so", "ping"]}, {"prefix": "$", "commands": "all"}]
+        },
+        headers=auth(write_key),
+    )
+    assert ok.status_code == 200
+    assert ok.json()["alt_prefixes"] == [
+        {"prefix": "?", "commands": ["ping", "so"]},
+        {"prefix": "$", "commands": "all"},
+    ]
+
+    async def refused(body: dict[str, Any]) -> str:
+        r = await client.patch(base, json=body, headers=auth(write_key))
+        assert r.status_code in (400, 422), r.text
+        return str(r.json()["detail"])
+
+    assert "already the prefix" in await refused({"alt_prefixes": [{"prefix": "!", "commands": "all"}]})
+    assert "already an alternate" in await refused(
+        {"alt_prefixes": [{"prefix": "?", "commands": "all"}, {"prefix": "?", "commands": ["a"]}]}
+    )
+    assert "already the prefix" in await refused({"prefix": "?"})  # the main sign can't take an alternate's
+    await refused({"alt_prefixes": [{"prefix": "/x", "commands": "all"}]})
+    # Moving the main sign and the alternates together is checked as the result.
+    swap = await client.patch(
+        base, json={"prefix": "?", "alt_prefixes": [{"prefix": "!", "commands": "all"}]}, headers=auth(write_key)
+    )
+    assert swap.status_code == 200 and swap.json()["prefix"] == "?"
+    cleared = await client.patch(base, json={"alt_prefixes": []}, headers=auth(write_key))
+    assert cleared.json()["alt_prefixes"] == []

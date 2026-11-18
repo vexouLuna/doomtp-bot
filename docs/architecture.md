@@ -175,7 +175,7 @@ Three properties the picture is meant to make obvious:
 2. The Dispatcher handles it in order:
    - **ChatLogger** queues it for storage. This always happens, including for ignored users.
    - The **Ignore gate** stops processing here if the sender is ignored, is the bot itself, or carries the Twitch chat-bot badge (configurable).
-   - **Dispatch** checks whether the message starts with the channel prefix, which makes it a command expression, and runs any regex **listeners** enabled for the channel.
+   - **Dispatch** checks whether the message starts with the channel prefix (or an alternate prefix that forwards that command, spec §2.1.1), which makes it a command expression, and runs any regex **listeners** enabled for the channel.
 3. The runtime handles the expression (ADR-0005):
    1. **Parse** the text into an AST.
    2. **Resolve** each command name. The order is built-in, then published in the channel, then the user's personal commands.
@@ -636,6 +636,10 @@ A **race window** remains: a mod can act after the message has already been sent
     broadcaster inviting the bot again themselves (through `/auth/connect`, which `!join` in the bot's chat links to).
   - Never send unsolicited messages in basic-tier channels. Timers and alerts there require an explicit opt-in by a mod.
 - **Per-channel settings:** `prefix`, `reply_hold_ms`, `publish_min_role`, `channel_var_write_role`, `history_backfill` (on for new channels), `log_enabled`, `quiet_errors`, `cc_edit_notice` (off by default), `bot_enabled` (on by default; off, the bot logs but never sends a message there), `slur_filter` (`base`, `strict` or `strictest`; `base` always applies, see `filters/slurs.py`) and the callback defaults.
+- **Alternate prefixes** (`alt_prefixes`, spec §2.1.1): up to 5 extra signs, each forwarding a list of commands
+  (or all) to the channel prefix. Dispatch rewrites a matching line to the main sign before it parses it, logs the
+  line as typed with `is_command` set, and keeps it from listeners. Edited in the site's channel settings
+  (`PATCH /api/v1/channels/{login}`); changing the main prefix refuses a sign an alternate already uses.
 - **Prefix validation:** a prefix can't start with `/` or `.`, because Twitch clients treat those as chat commands. Its length is 1–3 characters and it can't contain whitespace.
 
 ---
