@@ -361,7 +361,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.4.0" },
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
-    { name = "railroad-diagrams", marker = "extra == 'dev'", specifier = ">=3" },
+    { name = "railroad-diagrams", marker = "extra == 'dev'", specifier = ">=3.0.1" },
     { name = "regex", specifier = ">=2024.11.6" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "sqlalchemy", specifier = ">=2.0.36" },
