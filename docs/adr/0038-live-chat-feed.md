@@ -18,7 +18,8 @@ The owner decided three things (2026-11-17):
 - **Access: the log's rule** (CH-3 a). Public for channels whose public log is on (`public_log` and
   `log_enabled`), the channel's moderators always; a cap on open streams per client address.
 - **Removals are pushed** so a deleted, timed-out or cleared message disappears from the overlay. Third-party
-  emotes and pronouns are the overlay's business, looked up in the browser.
+  emotes are the overlay's business, looked up in the browser. Pronouns were too, until ADR-0039 moved
+  them to the bot (`/api/v2/channels/{login}/pronouns`).
 
 ## Decision
 

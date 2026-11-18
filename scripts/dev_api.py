@@ -25,6 +25,7 @@ can be watched, paused and cancelled.
 
 The live chat feed (/api/v2/channels/vexouluna/chat/live, ADR-0038) gets a made-up line from alice every
 two seconds, logged too; every fifth is deleted a second later and every twentieth line pest is timed out.
+/api/v2/channels/{login}/pronouns (ADR-0039) answers from a stand-in: alice is she/her, pest any.
 """
 
 from __future__ import annotations
@@ -64,6 +65,7 @@ from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.roles import GLOBAL
 from doomtp_bot.policy.service import PolicyService
+from doomtp_bot.pronouns import PronounService
 from doomtp_bot.runtime.engine import Runtime
 from doomtp_bot.runtime.explain import ReportStore, explain
 from doomtp_bot.storage.db import Databases, configure_event_loop
@@ -152,6 +154,17 @@ async def made_up_chat(feed: LiveFeed, writer: ChatLogWriter) -> None:
             cleared = UserMessagesCleared(USERS["vexouluna"], USERS["pest"], int(time.time() * 1000), duration_s=60)
             await writer.moderation(cleared)
             feed.removal(cleared)
+
+
+async def made_up_pronouns(path: str) -> tuple[int, Any]:
+    """Stands in for the pronoun service: alice is she/her, pest any; nobody else set any."""
+    if path == "/pronouns":
+        return 200, {
+            "sheher": {"name": "sheher", "subject": "She", "object": "Her", "singular": False},
+            "any": {"name": "any", "subject": "Any", "object": "", "singular": True},
+        }
+    found = {"alice": "sheher", "pest": "any"}.get(path.removeprefix("/users/"))
+    return (200, {"pronoun_id": found, "alt_pronoun_id": None}) if found else (404, None)
 
 
 class NoSessions:
@@ -348,6 +361,7 @@ async def main(args: argparse.Namespace) -> None:
             "explain_reports": reports,
             "backfill": backfill_queue,
             "live": feed,
+            "pronouns": PronounService(made_up_pronouns),
         },
         admin_password=args.password,
         jobs=jobs,
