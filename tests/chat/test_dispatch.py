@@ -20,6 +20,7 @@ from doomtp_bot.core.streams import StreamStatus
 from doomtp_bot.customcmds.resolution import CustomCommandLoader
 from doomtp_bot.customcmds.service import CustomCommandService
 from doomtp_bot.history.backfill import BackfillService
+from doomtp_bot.lang.altprefix import AltPrefix
 from doomtp_bot.lang.parser import DEFAULT_PREFIX
 from doomtp_bot.moderation.index import ModerationIndex
 from doomtp_bot.modules import builtin_registry
@@ -542,3 +543,34 @@ async def test_ignore_me_can_be_taken_back_but_an_ignore_someone_else_set_stays(
     assert replies[0].startswith("ignoring you here, Alice; say !unignore me")
     assert replies[1:] == ["welcome back, Alice", "pong", replies[0]]
     assert h.policy.is_ignored(CHANNEL_ID, "401") and h.policy.is_ignored(CHANNEL_ID, "400")
+
+
+async def test_an_alternate_prefix_forwards_only_its_commands(h: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Spec §2.1.1: `?ping` runs as `!ping`; the log keeps the line as typed and counts it as a command,
+    and regex listeners never see it."""
+    heard: list[str] = []
+
+    async def listeners(msg: ChatMessage) -> None:
+        heard.append(msg.text)
+
+    monkeypatch.setattr(h.dispatcher, "_listeners", listeners)
+    await h.policy.mutate(
+        lambda repo: repo.set_channel_field(
+            CHANNEL_ID, "alt_prefixes", (AltPrefix("?", ("echo",)), AltPrefix("$", None)), Actor("1")
+        )
+    )
+    await h.say("alice", "?echo a")
+    await h.say("alice", "?ping")  # not in that list: ordinary chat
+    await h.say("alice", "$echo b")  # "all"
+    await h.say("alice", "hey ?echo c")  # mid-line
+    await h.say("alice", "!echo ?echo d")  # the main sign still works; `?` inside is just text
+    await h.settle()
+    assert [text for _, text, _ in h.twitch.sent] == ["a", "b", "?echo d"]
+    assert heard == ["?ping", "hey ?echo c"]
+    assert await h.rows("SELECT text, is_command FROM messages ORDER BY sent_at") == [
+        ("?echo a", 1), ("?ping", 0), ("$echo b", 1), ("hey ?echo c", 0), ("!echo ?echo d", 1),
+    ]  # fmt: skip
+    async with await h.dbs.bot.execute(
+        "SELECT action FROM public.audit_log WHERE action = 'channel.set.alt_prefixes'"
+    ) as cur:
+        assert len(await cur.fetchall()) == 1

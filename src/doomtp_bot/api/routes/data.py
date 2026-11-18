@@ -45,7 +45,8 @@ from doomtp_bot.customcmds.params import to_params
 from doomtp_bot.customcmds.resolution import MODULE as CUSTOM_MODULE
 from doomtp_bot.customcmds.resolution import is_custom, published_specs, returns, system_specs
 from doomtp_bot.customcmds.service import CustomCommandService
-from doomtp_bot.modules.core_admin import validate_prefix
+from doomtp_bot.lang.altprefix import MAX_ALT_PREFIXES, AltPrefix
+from doomtp_bot.modules.core_admin import validate_alt_prefixes, validate_prefix
 from doomtp_bot.policy.roles import BOT_ADMIN_RANK, GLOBAL
 from doomtp_bot.policy.service import PolicyService
 from doomtp_bot.policy.settings import CHANNEL_SETTINGS
@@ -83,6 +84,7 @@ def _channel_json(settings: ChannelSettings) -> dict[str, Any]:
         "tier": settings.tier,
         "capabilities": sorted(settings.capabilities),
         "prefix": settings.prefix,
+        "alt_prefixes": [a.to_json() for a in settings.alt_prefixes],
         "timezone": settings.timezone,
         "bot_enabled": settings.bot_enabled,
         "slur_filter": settings.slur_filter,
@@ -116,6 +118,13 @@ class ChannelRolesJson(BaseModel):
     var_admin: str
 
 
+class AltPrefixJson(BaseModel):
+    """An alternate sign (spec §2.1.1): `commands` it forwards to the main prefix, or `"all"`."""
+
+    prefix: str = Field(max_length=16)
+    commands: list[str] | Literal["all"]
+
+
 class ChannelJson(BaseModel):
     """A channel and its settings. Times are in ms since the epoch."""
 
@@ -127,6 +136,7 @@ class ChannelJson(BaseModel):
     tier: str
     capabilities: list[str]
     prefix: str
+    alt_prefixes: list[AltPrefixJson]
     timezone: str
     bot_enabled: bool
     slur_filter: str
@@ -146,6 +156,7 @@ class ChannelList(BaseModel):
 
 class ChannelPatch(BaseModel):
     prefix: str | None = Field(default=None, max_length=16)
+    alt_prefixes: list[AltPrefixJson] | None = Field(default=None, max_length=MAX_ALT_PREFIXES)
     quiet_errors: bool | None = None
     cc_edit_notice: bool | None = None
     bot_enabled: bool | None = None
@@ -256,6 +267,17 @@ async def patch_channel(request: Request, login: str, body: ChannelPatch, caller
         raise HTTPException(status_code=400, detail=f"{', '.join(nulls)} can't be null")
     if "prefix" in changes and (problem := validate_prefix(changes["prefix"])):
         raise HTTPException(status_code=400, detail=problem)
+    if "alt_prefixes" in changes:
+        changes["alt_prefixes"] = tuple(
+            AltPrefix(
+                a["prefix"], None if a["commands"] == "all" else tuple(dict.fromkeys(n.lower() for n in a["commands"]))
+            )
+            for a in changes["alt_prefixes"]
+        )
+    if "prefix" in changes or "alt_prefixes" in changes:  # checked against each other, as they'll be
+        main = changes.get("prefix", settings.prefix)
+        if problem := validate_alt_prefixes(main, changes.get("alt_prefixes", settings.alt_prefixes)):
+            raise HTTPException(status_code=400, detail=problem)
     if "timezone" in changes and not _known_zone(changes["timezone"]):
         # Read with a fallback to UTC everywhere (formats, timers), so a typo would go unnoticed.
         raise HTTPException(status_code=400, detail=f"no timezone named {changes['timezone']}; use an IANA name")

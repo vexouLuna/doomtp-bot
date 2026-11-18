@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass, field
 
 from doomtp_bot import clock
+from doomtp_bot.lang.altprefix import AltPrefix, load_alt_prefixes
 from doomtp_bot.lang.parser import DEFAULT_PREFIX
 from doomtp_bot.policy.roles import GLOBAL, Role
 from doomtp_bot.runtime.spec import Cooldown
@@ -22,6 +23,7 @@ class ChannelSettings:
     tier: str = "basic"
     capabilities: frozenset[str] = frozenset()
     prefix: str = DEFAULT_PREFIX
+    alt_prefixes: tuple[AltPrefix, ...] = ()  # forward chosen commands to `prefix` (spec §2.1.1)
     reply_hold_ms: int = 0
     log_enabled: bool = True
     bot_enabled: bool = True  # off: logs only, never speaks or runs anything (outbox, dispatcher)
@@ -113,6 +115,7 @@ async def load_snapshot(conn: Connection) -> PolicySnapshot:
                 tier=r["tier"],
                 capabilities=frozenset(json.loads(r["capabilities"] or "[]")),
                 prefix=r["prefix"],
+                alt_prefixes=load_alt_prefixes(r["alt_prefixes"]),
                 added_at=r["added_at"],
                 reply_hold_ms=r["reply_hold_ms"],
                 log_enabled=r["log_enabled"],

@@ -50,6 +50,24 @@ Other Unicode normalization (NFC/NFKC, case folding) MUST NOT be applied to argu
 
 **U+FE0F (the emoji presentation selector)** is ignored when matching the prefix, on either side. A prefix saved as `🏜` matches a message that begins with `🏜\uFE0F`, and the other way round, because chat clients differ in which form they send.
 
+#### 2.1.1 Alternate prefixes
+
+A channel MAY also have up to 5 **alternate prefixes**, each with a list of command names it forwards (1–50
+names) or `all`. They are a chat-line convenience, not a second sign in the language:
+
+- After steps 1–3, if the line does **not** already match `line_start` with the channel prefix, each
+  alternate is tried in order **at the very start of the line** (no leading `(`). It matches when it is
+  followed (after its own gap, by the same rule as above) by an optional `@` and a name made of name
+  characters that is not all digits, then WS or the end of the line. If that name, case-folded, is in the
+  alternate's list (or the list is `all`), the alternate is replaced by the channel prefix and the line
+  goes on to step 4 as if it had been typed that way: `?so @bob` runs as `!so @bob`.
+- Nothing else changes. Inside an expression, in substitutions, triggers, timers, help and the editor only
+  the channel prefix is a sign; `!echo ?so` echoes `?so`. A bare expression line (`?1+2`) is not forwarded.
+- The name matched is the one typed, so an alias forwards only if the alias itself is listed.
+- Each alternate follows the prefix rules above, and no two signs of a channel (the prefix included, and
+  U+FE0F ignored) may be the same.
+- A forwarded line is logged as typed and counts as a command, so listeners never see it.
+
 ### 2.2 Whitespace
 
 `WS` is one or more characters with the Unicode `White_Space` property. Consecutive WS is equivalent to a single space, except inside quoted strings (§2.4) and in `+raw` captures (§7.3).
