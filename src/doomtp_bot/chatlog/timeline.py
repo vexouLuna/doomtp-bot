@@ -316,6 +316,9 @@ def _moderation(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# The live feed (chatlog/live.py) builds the same entries from events still in memory.
+message_entry, notification_entry = _message, _notification
+
 _SHAPE = {"message": _message, "notification": _notification, "moderation": _moderation}
 
 

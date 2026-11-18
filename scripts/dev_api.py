@@ -22,6 +22,9 @@ The job runtime runs too, on the same database, so /api/v2/jobs has `chat_backfi
 queued for vexouluna at every start, and more come from the channel page's backfill panel. The history
 service is a stand-in that makes up a few lines for any range, a second and a half per request, so a run
 can be watched, paused and cancelled.
+
+The live chat feed (/api/v2/channels/vexouluna/chat/live, ADR-0038) gets a made-up line from alice every
+two seconds, logged too; every fifth is deleted a second later and every twentieth line pest is timed out.
 """
 
 from __future__ import annotations
@@ -43,7 +46,9 @@ from doomtp_bot.api.routes.session import set_session_cookie
 from doomtp_bot.api.sessions import SESSION_COOKIE
 from doomtp_bot.audit.log import TABLE as AUDIT_TABLE
 from doomtp_bot.channels.manager import ChannelManager
+from doomtp_bot.chatlog.live import LiveFeed
 from doomtp_bot.chatlog.writer import ChatLogWriter
+from doomtp_bot.core.events import ChatMessage, MessageDeleted, UserMessagesCleared
 from doomtp_bot.core.health import ComponentHealth, HealthRegistry, Status
 from doomtp_bot.customcmds.packs import PackService
 from doomtp_bot.customcmds.resolution import CustomCommandLoader
@@ -112,6 +117,41 @@ class MadeUpHistory:
                 for n, at in enumerate(range(from_ms + step, to_ms, step)[:6], 1)
             )
         )
+
+
+async def made_up_chat(feed: LiveFeed, writer: ChatLogWriter) -> None:
+    """A line from alice in vexouluna every two seconds, logged and on the live feed; every fifth is
+    deleted a second later, and every twentieth line pest is timed out, so a stream shows each event."""
+    n = 0
+    while True:
+        await asyncio.sleep(2)
+        n += 1
+        at = int(time.time() * 1000)
+        mid = f"live-{at}"
+        text = f"made-up live line {n} Kappa"
+        msg = ChatMessage(
+            message_id=mid, channel_id=USERS["vexouluna"], channel_login="vexouluna", user_id=USERS["alice"],
+            user_login="alice", display_name="Alice", text=text, sent_at=at, received_at=at,
+            raw_event={
+                "message_id": mid, "chatter_user_id": USERS["alice"], "chatter_user_login": "alice",
+                "chatter_user_name": "Alice", "color": "#8A2BE2", "badges": [], "message_type": "text",
+                "message": {"text": text, "fragments": [
+                    {"type": "text", "text": f"made-up live line {n} "},
+                    {"type": "emote", "text": "Kappa", "emote": {"id": "25", "format": ["static"]}},
+                ]},
+            },
+        )  # fmt: skip
+        await writer.message(msg)
+        feed.message(msg, is_command=False)
+        if n % 5 == 0:
+            await asyncio.sleep(1)
+            gone = MessageDeleted(USERS["vexouluna"], mid, USERS["alice"], int(time.time() * 1000))
+            await writer.moderation(gone)
+            feed.removal(gone)
+        if n % 20 == 0:
+            cleared = UserMessagesCleared(USERS["vexouluna"], USERS["pest"], int(time.time() * 1000), duration_s=60)
+            await writer.moderation(cleared)
+            feed.removal(cleared)
 
 
 class NoSessions:
@@ -287,6 +327,7 @@ async def main(args: argparse.Namespace) -> None:
 
     health.register("databases", ok)
     health.register("twitch", no_twitch)
+    feed = LiveFeed()
     app = create_app(
         health,
         None,
@@ -306,6 +347,7 @@ async def main(args: argparse.Namespace) -> None:
             "api_keys": ApiKeyService(dbs.bot),
             "explain_reports": reports,
             "backfill": backfill_queue,
+            "live": feed,
         },
         admin_password=args.password,
         jobs=jobs,
@@ -317,10 +359,14 @@ async def main(args: argparse.Namespace) -> None:
         manages = ", ".join(sorted(dev_channels(login, moderators))) or "a plain user"
         print(f"{login} ({manages}): {base}/dev/login-as?user={login}&next=/manage")
     print(f"an explain report: http://{args.host}:{args.port}/explain/{token}")
+    print(f"live chat: {base}/api/v2/channels/vexouluna/chat/live (a made-up line every 2 s)")
     server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, log_level="info"))
+    app.state.stopping = lambda: server.should_exit
+    chatter = asyncio.create_task(made_up_chat(feed, writer))
     try:
         await server.serve()
     finally:
+        chatter.cancel()
         await jobs.close()
         await writer.stop()
         await dbs.close()

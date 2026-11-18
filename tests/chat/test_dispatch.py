@@ -12,6 +12,7 @@ import pytest
 
 from doomtp_bot.app.dispatch import Dispatcher
 from doomtp_bot.channels.manager import ChannelManager
+from doomtp_bot.chatlog.live import LiveFeed
 from doomtp_bot.chatlog.writer import ChatLogWriter
 from doomtp_bot.core.events import Badge, ChatCleared, ChatMessage, ChatNotification, MessageDeleted
 from doomtp_bot.core.links import BotBadges
@@ -574,3 +575,22 @@ async def test_an_alternate_prefix_forwards_only_its_commands(h: Harness, monkey
         "SELECT action FROM public.audit_log WHERE action = 'channel.set.alt_prefixes'"
     ) as cur:
         assert len(await cur.fetchall()) == 1
+
+
+async def test_the_dispatcher_feeds_the_live_chat_feed(h: Harness) -> None:
+    """ADR-0038: every message as typed (forwarded ones as commands), notifications and removals."""
+    h.dispatcher.live = feed = LiveFeed()
+    sub = feed.open(CHANNEL_ID, "1.2.3.4")
+    assert sub is not None
+    mid = await h.say("alice", "hello")
+    await h.say("alice", "!ping")
+    await h.dispatcher.handle(ChatNotification("n1", CHANNEL_ID, "400", "raid", {"viewers": 3}, 1))
+    await h.dispatcher.handle(MessageDeleted(CHANNEL_ID, mid, "400", 2))
+    await h.dispatcher.handle(ChatCleared(CHANNEL_ID, 3))
+    await h.settle()
+    got = [sub.queue.get_nowait() for _ in range(sub.queue.qsize())]
+    assert [(e, d.get("text"), d.get("is_command")) for e, d in got[:2]] == [
+        ("message", "hello", False), ("message", "!ping", True),
+    ]  # fmt: skip
+    assert [e for e, _ in got[2:]] == ["notification", "delete", "chat_clear"]
+    assert got[3][1]["message_id"] == mid
