@@ -53,6 +53,7 @@ from doomtp_bot.modules.services import BotServices
 from doomtp_bot.policy.repository import Actor
 from doomtp_bot.policy.roles import MODERATOR_RANK
 from doomtp_bot.policy.service import PolicyService
+from doomtp_bot.pronouns import AiohttpFetch, PronounService
 from doomtp_bot.runtime.engine import Runtime
 from doomtp_bot.runtime.explain import ReportStore
 from doomtp_bot.runtime.registry import CommandRegistry
@@ -231,6 +232,8 @@ class Bot:
         """Channels, the capability probe, and backfill as jobs (ADR-0024 §5, ADR-0027)."""
         settings, twitch = self.settings, self.twitch
         self.streams = StreamStatus()
+        self.pronoun_source = AiohttpFetch()
+        self.pronouns = PronounService(self.pronoun_source)  # the chat overlay's pronouns (ADR-0039)
         self.live = LiveFeed()  # the live chat feed: dispatcher in, API streams out (ADR-0038)
         self.channels = ChannelManager(self.policy, twitch, self.writer, default_prefix=settings.default_prefix)
         self.probe = CapabilityProbe(policy=self.policy, channels=self.channels, prober=twitch)
@@ -446,6 +449,7 @@ class Bot:
                 "explain_reports": self.explain_reports,
                 "twitch_signin": self.signin,
                 "live": self.live,  # /api/v2/channels/{login}/chat/live (ADR-0038)
+                "pronouns": self.pronouns,  # /api/v2/channels/{login}/pronouns (ADR-0039)
             },
             admin_password=settings.admin_password_value(),
             admin_password_networks=settings.admin_password_networks,
@@ -488,6 +492,7 @@ class Bot:
         await self.jobs.close()  # a running backfill stops before its next request, and resumes at the next start
         await self.history.close()
         await self.emote_cdn.close()
+        await self.pronoun_source.close()
         twitch_start.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await twitch_start
