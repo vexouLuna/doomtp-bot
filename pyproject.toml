@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "twitchio>=3,<4",
     "aiohttp>=3.9",
-    "psycopg[binary]>=3.3.6",
+    "psycopg[binary]>=3.3.9",
     # Schema migrations with a downgrade for every upgrade, so an image rollback can undo them (ADR-0022).
     "alembic>=1.20.0",
     "sqlalchemy>=2.0.36",
