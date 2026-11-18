@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from collections.abc import Coroutine, Sequence
 
     from doomtp_bot.channels.manager import ChannelManager
+    from doomtp_bot.chatlog.live import LiveFeed
     from doomtp_bot.chatlog.writer import ChatLogWriter
     from doomtp_bot.core.links import BotBadges
     from doomtp_bot.core.outbox import Outbox
@@ -85,6 +86,7 @@ class Dispatcher:
         customcmds: CustomCommandService | None = None,
         bot_badges: BotBadges | None = None,
         watchers: Sequence[ChatWatcher] = (),
+        live: LiveFeed | None = None,
         max_concurrent_runs: int = MAX_CONCURRENT_RUNS,
     ) -> None:
         self.runtime = runtime
@@ -101,6 +103,7 @@ class Dispatcher:
         self.customcmds = customcmds
         self.bot_badges = bot_badges
         self.watchers = tuple(watchers)
+        self.live = live  # the live chat feed (ADR-0038)
         # Watcher events run one at a time per channel, in the order the lines came (ADR-0028).
         self._watch_locks: dict[str, asyncio.Lock] = {}
         self._slots = asyncio.Semaphore(max_concurrent_runs)
@@ -113,11 +116,15 @@ class Dispatcher:
             case ChatNotification():
                 if self.channels.is_active(event.channel_id):
                     await self.writer.notification(event)
+                    if self.live is not None:
+                        self.live.notification(event)
                     self._spawn(self._notification_triggers(event), f"trigger-{event.id}")
             case MessageDeleted() | UserMessagesCleared() | ChatCleared():
                 self.moderation.record(event)
                 if self.channels.is_active(event.channel_id):
                     await self.writer.moderation(event)
+                    if self.live is not None:
+                        self.live.removal(event)
             case StreamStatusChanged():
                 if self.channels.is_active(event.channel_id):
                     self._spawn(self._stream_triggers(event), f"stream-{event.channel_id}")
@@ -140,6 +147,8 @@ class Dispatcher:
         is_command = is_command or forwarded is not None
         if settings is None or settings.log_enabled:
             await self.writer.message(msg, is_command=is_command)  # logged first, always — including ignored users
+        if self.live is not None:
+            self.live.message(msg, is_command=is_command)  # as typed, like the log
         if self.activity is not None and not msg.is_self:
             self.activity.saw_message(msg.channel_id)
         if self.watchers and msg.source == "eventsub":
