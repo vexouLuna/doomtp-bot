@@ -365,7 +365,7 @@ requires-dist = [
     { name = "regex", specifier = ">=2024.11.6" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "sqlalchemy", specifier = ">=2.0.36" },
-    { name = "structlog", specifier = ">=24.1" },
+    { name = "structlog", specifier = ">=26.1.0" },
     { name = "twitchio", specifier = ">=3,<4" },
     { name = "types-regex", marker = "extra == 'dev'" },
     { name = "tzdata", marker = "sys_platform == 'win32'", specifier = ">=2024.1" },
