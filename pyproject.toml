@@ -15,7 +15,7 @@ dependencies = [
     "uvicorn>=0.30",
     "pydantic>=2.7",
     "pydantic-settings>=2.16.0",
-    "structlog>=24.1",
+    "structlog>=26.1.0",
     # Shared job runtime, /api/v2 conventions and audit log with twitch-archive (ADR-0027). A tarball, since
     # the image has no git.
     "vex-platform @ https://github.com/vexouLuna/vex-platform/archive/refs/tags/v0.10.1.tar.gz",
